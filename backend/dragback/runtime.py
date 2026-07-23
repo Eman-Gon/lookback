@@ -29,5 +29,6 @@ def create_authority_runtime() -> AuthorityRuntime:
         authority_threshold=settings.authority_threshold,
     )
     runtime = AuthorityRuntime(graph=graph, authority=authority)
-    runtime.reset()
+    if settings.demo_reset_enabled:
+        runtime.reset()
     return runtime

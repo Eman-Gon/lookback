@@ -1,11 +1,25 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api } from "./api";
-import { DemoRunner, type DemoPhase, type DemoPhaseId } from "./components/DemoRunner";
+import { DemoRunner, type DemoPhase } from "./components/DemoRunner";
 import { GraphPanel } from "./components/GraphPanel";
 import { GrantPanel } from "./components/GrantPanel";
 import { LoopPanel } from "./components/LoopPanel";
 import { RealityPanel } from "./components/RealityPanel";
-import type { AgentState, AuthorityState, ExecutionAttempt } from "./types";
+import {
+  completedPhasesAfter,
+  DemoOperationController,
+  enabledDemoPhases,
+  isAbortError,
+  OwnedCorrelationTracker,
+  startSequentialPolling,
+  type DemoPhaseId,
+} from "./demo-control";
+import type {
+  AgentState,
+  AuthorityState,
+  ExecutionAttempt,
+  ServiceHealth,
+} from "./types";
 
 const DEMO_PHASES: readonly DemoPhase[] = [
   {
@@ -85,22 +99,140 @@ export default function App() {
   const [isRunning, setIsRunning] = useState(false);
   const [isManualBusy, setIsManualBusy] = useState(false);
   const [isComplete, setIsComplete] = useState(false);
-  const runSequenceRef = useRef(0);
+  const [serviceHealth, setServiceHealth] = useState<ServiceHealth>({
+    authority: false,
+    agent: false,
+    executor: false,
+  });
   const pendingDelayRef = useRef<PendingDelay | null>(null);
+  const authorityEventEpochRef = useRef(0);
+  const agentEventEpochRef = useRef(0);
+  const ownedResetCorrelationsRef = useRef<OwnedCorrelationTracker | null>(null);
+  if (ownedResetCorrelationsRef.current === null) {
+    ownedResetCorrelationsRef.current = new OwnedCorrelationTracker();
+  }
+  const ownedResetCorrelations = ownedResetCorrelationsRef.current;
+  const operationControllerRef = useRef<DemoOperationController | null>(null);
+  if (operationControllerRef.current === null) {
+    operationControllerRef.current = new DemoOperationController();
+  }
+  const operationController = operationControllerRef.current;
 
-  const refresh = useCallback(async () => {
-    const [authorityState, agentState] = await Promise.all([api.authorityState(), api.agentState()]);
-    setAuthority(authorityState);
-    setAgent(agentState);
+  const refresh = useCallback(async (signal?: AbortSignal) => {
+    const authorityEpoch = authorityEventEpochRef.current;
+    const agentEpoch = agentEventEpochRef.current;
+    const [healthResult, stateResult] = await Promise.allSettled([
+      api.health(signal),
+      Promise.all([api.authorityState(signal), api.agentState(signal)]),
+    ]);
+    signal?.throwIfAborted();
+    if (healthResult.status === "fulfilled") {
+      setServiceHealth(healthResult.value);
+    }
+    if (stateResult.status === "rejected") {
+      throw stateResult.reason;
+    }
+    const [authorityState, agentState] = stateResult.value;
+    if (authorityEventEpochRef.current === authorityEpoch) {
+      setAuthority(authorityState);
+    }
+    if (agentEventEpochRef.current === agentEpoch) {
+      setAgent(agentState);
+    }
+  }, []);
+
+  const reconcileClientReset = useCallback(() => {
+    setCompletedIds(new Set());
+    setExecutorAttempts([]);
+    setIsComplete(false);
+  }, []);
+
+  const cancelPendingDelay = useCallback(() => {
+    const pending = pendingDelayRef.current;
+    if (!pending) return;
+    window.clearTimeout(pending.timer);
+    pending.resolve(false);
+    pendingDelayRef.current = null;
+  }, []);
+
+  const handleExternalReset = useCallback(() => {
+    operationController.cancel();
+    cancelPendingDelay();
+    setActiveIndex(null);
+    setIsRunning(false);
+    setIsManualBusy(false);
+    reconcileClientReset();
+  }, [cancelPendingDelay, operationController, reconcileClientReset]);
+
+  useEffect(() => {
+    const operation = operationController.begin();
+    refresh(operation.signal)
+      .catch((caught) => {
+        if (operationController.isCurrent(operation) && !isAbortError(caught)) {
+          setError(`Unable to load demo state. ${errorMessage(caught)}`);
+        }
+      })
+      .finally(() => operationController.finish(operation));
+
+    return () => {
+      if (operationController.isCurrent(operation)) {
+        operationController.cancel();
+      }
+    };
+  }, [operationController, refresh]);
+
+  useEffect(() => {
+    const closeAuthority = api.subscribeAuthority(
+      (state, eventType, _sequence, correlationId) => {
+        authorityEventEpochRef.current += 1;
+        setAuthority(state);
+        if (
+          eventType === "graph.state.reset"
+          && !ownedResetCorrelations.owns(correlationId)
+        ) {
+          handleExternalReset();
+        }
+      },
+      (connected) => {
+        setServiceHealth((current) => ({ ...current, authority: connected }));
+      },
+    );
+    const closeAgent = api.subscribeAgent(
+      (state, eventType, _sequence, correlationId) => {
+        agentEventEpochRef.current += 1;
+        setAgent(state);
+        if (
+          (eventType === "loop.state.reset" || state.run === null)
+          && !ownedResetCorrelations.owns(correlationId)
+        ) {
+          handleExternalReset();
+        }
+      },
+      (connected) => {
+        setServiceHealth((current) => ({ ...current, agent: connected }));
+      },
+    );
+    return () => {
+      closeAuthority();
+      closeAgent();
+    };
+  }, [handleExternalReset, ownedResetCorrelations]);
+
+  useEffect(() => {
+    return startSequentialPolling({
+      poll: api.health,
+      onResult: setServiceHealth,
+      onError: () => {
+        setServiceHealth({ authority: false, agent: false, executor: false });
+      },
+      intervalMs: 5000,
+      timeoutMs: 4000,
+    });
   }, []);
 
   useEffect(() => {
-    refresh().catch((caught) => setError(`Unable to load demo state. ${errorMessage(caught)}`));
-  }, [refresh]);
-
-  useEffect(() => {
     return () => {
-      runSequenceRef.current += 1;
+      operationController.cancel();
       const pending = pendingDelayRef.current;
       if (pending) {
         window.clearTimeout(pending.timer);
@@ -108,26 +240,32 @@ export default function App() {
         pendingDelayRef.current = null;
       }
     };
-  }, []);
+  }, [operationController]);
 
-  const performPhase = useCallback(async (phaseId: DemoPhaseId) => {
+  const performPhase = useCallback(async (phaseId: DemoPhaseId, signal: AbortSignal) => {
     switch (phaseId) {
       case "reset":
+        {
+          const correlationId = `ui-reset-${crypto.randomUUID()}`;
+          ownedResetCorrelations.register(correlationId);
+          await api.resetAll(signal, correlationId);
+        }
+        signal.throwIfAborted();
         setExecutorAttempts([]);
-        await Promise.all([api.resetAuthority(), api.resetAgent()]);
         break;
       case "start":
-        await api.start();
+        await api.start(signal);
         break;
       case "tests":
-        await api.testsPass();
+        await api.testsPass(signal);
         break;
       case "decision":
-        await api.ingestDecision();
+        await api.ingestDecision(signal);
         break;
       case "old-grant":
       case "new-grant": {
-        const liveAgent = await api.agentState();
+        const liveAgent = await api.agentState(signal);
+        signal.throwIfAborted();
         if (!liveAgent.run) {
           throw new Error("No active agent run is available for execution.");
         }
@@ -142,12 +280,16 @@ export default function App() {
           throw new Error(isOldGrant ? "The graph-v17 plan is unavailable." : "The graph-v18 plan is unavailable.");
         }
 
-        const result = await api.execute({
-          token,
-          run_id: liveAgent.run.run_id,
-          task_id: liveAgent.run.ticket_id,
-          plan,
-        });
+        const result = await api.execute(
+          {
+            token,
+            run_id: liveAgent.run.run_id,
+            task_id: liveAgent.run.ticket_id,
+            plan,
+          },
+          signal,
+        );
+        signal.throwIfAborted();
         const grant = isOldGrant ? "graph-v17" : "graph-v18";
         setExecutorAttempts((current) => [
           ...current.filter((attempt) => attempt.grant !== grant),
@@ -156,43 +298,19 @@ export default function App() {
         break;
       }
       case "recheck":
-        await api.recheck();
+        await api.recheck(signal);
         break;
       case "replan":
-        await api.replan();
+        await api.replan(signal);
         break;
     }
 
-    await refresh();
-  }, [refresh]);
+    signal.throwIfAborted();
+    await refresh(signal);
+  }, [ownedResetCorrelations, refresh]);
 
   const enabledIds = useMemo(() => {
-    const enabled = new Set<DemoPhaseId>(["reset"]);
-    const oldAttempt = executorAttempts.find((attempt) => attempt.grant === "graph-v17");
-
-    if (authority?.graph_version === "graph-v17" && !agent?.run) enabled.add("start");
-    if (agent?.run && !agent.run.tests_passed) enabled.add("tests");
-    if (authority?.graph_version === "graph-v17" && agent?.run?.tests_passed) enabled.add("decision");
-    if (
-      authority?.graph_version === "graph-v18"
-      && agent?.initial_grant_token
-      && agent.run?.plan.id === "PLAN-027"
-    ) {
-      enabled.add("old-grant");
-    }
-    if (authority?.graph_version === "graph-v18" && oldAttempt?.applied === false) enabled.add("recheck");
-    if (agent?.last_authorization?.verdict === "REPLAN") enabled.add("replan");
-    if (
-      authority?.graph_version === "graph-v18"
-      && agent?.last_authorization?.verdict === "ALLOW"
-      && agent.run?.graph_snapshot === "graph-v18"
-      && agent.run.plan.id === "PLAN-028"
-      && agent.run.grant_token
-    ) {
-      enabled.add("new-grant");
-    }
-
-    return enabled;
+    return enabledDemoPhases(authority, agent, executorAttempts);
   }, [agent, authority, executorAttempts]);
 
   function waitForPhase(ms: number) {
@@ -205,20 +323,11 @@ export default function App() {
     });
   }
 
-  function cancelPendingDelay() {
-    const pending = pendingDelayRef.current;
-    if (!pending) return;
-    window.clearTimeout(pending.timer);
-    pending.resolve(false);
-    pendingDelayRef.current = null;
-  }
-
   async function runDemo() {
     if (isRunning || isManualBusy) return;
 
     cancelPendingDelay();
-    const sequence = runSequenceRef.current + 1;
-    runSequenceRef.current = sequence;
+    const operation = operationController.begin();
     setError("");
     setIsComplete(false);
     setIsRunning(true);
@@ -226,32 +335,39 @@ export default function App() {
 
     try {
       for (let index = 0; index < DEMO_PHASES.length; index += 1) {
-        if (runSequenceRef.current !== sequence) return;
+        if (!operationController.isCurrent(operation)) return;
         const phase = DEMO_PHASES[index];
         setActiveIndex(index);
-        await performPhase(phase.id);
-        if (runSequenceRef.current !== sequence) return;
-        setCompletedIds((current) => new Set(current).add(phase.id));
+        await performPhase(phase.id, operation.signal);
+        if (!operationController.isCurrent(operation)) return;
+        setCompletedIds((current) => completedPhasesAfter(current, phase.id));
 
         if (phase.holdMs > 0 && index < DEMO_PHASES.length - 1) {
           const shouldContinue = await waitForPhase(phase.holdMs);
-          if (!shouldContinue || runSequenceRef.current !== sequence) return;
+          if (!shouldContinue || !operationController.isCurrent(operation)) return;
         }
       }
 
       setActiveIndex(null);
       setIsComplete(true);
     } catch (caught) {
-      setError(`Demo stopped. ${errorMessage(caught)}`);
+      if (operationController.isCurrent(operation) && !isAbortError(caught)) {
+        setError(`Demo stopped. ${errorMessage(caught)}`);
+      }
     } finally {
-      if (runSequenceRef.current === sequence) setIsRunning(false);
+      if (operationController.isCurrent(operation)) {
+        operationController.finish(operation);
+        setIsRunning(false);
+      }
     }
   }
 
   function stopDemo() {
-    runSequenceRef.current += 1;
+    operationController.cancel();
     cancelPendingDelay();
+    setActiveIndex(null);
     setIsRunning(false);
+    setIsManualBusy(false);
     setIsComplete(false);
   }
 
@@ -260,25 +376,34 @@ export default function App() {
     const phase = DEMO_PHASES[index];
     if (!enabledIds.has(phase.id)) return;
 
+    const operation = operationController.begin();
     setError("");
     setIsComplete(false);
     setIsManualBusy(true);
     setActiveIndex(index);
     try {
-      await performPhase(phase.id);
-      const nextCompleted = new Set(completedIds).add(phase.id);
+      await performPhase(phase.id, operation.signal);
+      if (!operationController.isCurrent(operation)) return;
+      const nextCompleted = completedPhasesAfter(completedIds, phase.id);
       const completed = nextCompleted.size === DEMO_PHASES.length;
       setCompletedIds(nextCompleted);
       setIsComplete(completed);
       if (completed) setActiveIndex(null);
     } catch (caught) {
-      setError(`Phase ${index + 1} failed. ${errorMessage(caught)}`);
+      if (operationController.isCurrent(operation) && !isAbortError(caught)) {
+        setError(`Phase ${index + 1} failed. ${errorMessage(caught)}`);
+      }
     } finally {
-      setIsManualBusy(false);
+      if (operationController.isCurrent(operation)) {
+        operationController.finish(operation);
+        setIsManualBusy(false);
+      }
     }
   }
 
   const isBusy = isRunning || isManualBusy;
+  const onlineServiceCount = Object.values(serviceHealth).filter(Boolean).length;
+  const allServicesOnline = onlineServiceCount === 3;
 
   return (
     <main>
@@ -288,9 +413,12 @@ export default function App() {
           <h1>Dragback</h1>
           <p>Tests prove the code works. Dragback proves the work is still wanted.</p>
         </div>
-        <div className="system-state" aria-label={`Current graph ${authority?.graph_version ?? "offline"}`}>
-          <span className={authority ? "online" : ""} aria-hidden="true" />
-          {authority?.graph_version ?? "services offline"}
+        <div
+          className="system-state"
+          aria-label={`${onlineServiceCount} of 3 services online. Current graph ${authority?.graph_version ?? "offline"}`}
+        >
+          <span className={allServicesOnline ? "online" : ""} aria-hidden="true" />
+          {authority?.graph_version ?? "graph offline"} · {onlineServiceCount}/3 online
         </div>
       </header>
 

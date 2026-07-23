@@ -35,6 +35,21 @@ DOWNSTREAM_EDGES = {
     EdgeKind.IMPLEMENTS,
 }
 
+UPSTREAM_ARTIFACT_KINDS = {
+    ArtifactKind.DECISION,
+    ArtifactKind.SPECIFICATION,
+    ArtifactKind.TICKET,
+    ArtifactKind.EVIDENCE,
+}
+
+STOPPABLE_WORK_KINDS = {
+    ArtifactKind.TASK,
+    ArtifactKind.AGENT_PLAN,
+    ArtifactKind.PULL_REQUEST,
+    ArtifactKind.CODE_CHANGE,
+    ArtifactKind.AGENT_RUN,
+}
+
 
 DEFAULT_AUTHORITY_POLICY: dict[str, set[str]] = {
     "export.authorization": {"compliance", "security", "product"},
@@ -253,12 +268,39 @@ class IntentAuthority:
                     visited.add(child.id)
                     queue.append((child.id, next_path))
 
+        affected_artifacts = [self.graph.get_artifact(artifact_id) for artifact_id in affected]
+        primary_path = max(paths, key=lambda item: len(item.node_ids), default=None)
+        upstream_chain: list[str] = []
+        primary_path_ids = primary_path.node_ids if primary_path else [changed_decision.id]
+        for artifact_id in primary_path_ids:
+            artifact = (
+                changed_decision
+                if artifact_id == changed_decision.id
+                else self.graph.get_artifact(artifact_id)
+            )
+            if artifact.kind in UPSTREAM_ARTIFACT_KINDS:
+                upstream_chain.append(artifact.id)
+        stopped_work = [
+            artifact.id
+            for artifact in affected_artifacts
+            if artifact.kind in STOPPABLE_WORK_KINDS
+        ]
+        normalized_decision_text = changed_decision.text.casefold()
+        directly_mentioned = [
+            artifact.id
+            for artifact in affected_artifacts
+            if artifact.id.casefold() in normalized_decision_text
+        ]
+
         return InvalidationReport(
             graph_version=self.graph.version_label,
             changed_decision_id=changed_decision.id,
             superseded_decision_id=superseded_id,
             affected_scopes=affected_scopes,
             affected_artifact_ids=affected,
+            upstream_chain_artifact_ids=upstream_chain,
+            stopped_work_artifact_ids=stopped_work,
+            directly_mentioned_artifact_ids=directly_mentioned,
             preserved_artifact_ids=preserved,
             paths=paths,
             evidence_refs=evidence_refs,
@@ -402,6 +444,12 @@ class IntentAuthority:
         except (ValueError, TypeError) as exc:
             return GrantVerificationResult(valid=False, reason=str(exc))
 
+        if payload.verdict is not Verdict.ALLOW:
+            return GrantVerificationResult(
+                valid=False,
+                reason=f"Grant payload verdict is {payload.verdict.value}, not ALLOW.",
+                payload=payload,
+            )
         if payload.expires_at <= utc_now():
             return GrantVerificationResult(
                 valid=False,

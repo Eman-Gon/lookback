@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Mapping
 from typing import Any
 
 from dragback.domain import Artifact, Edge, EdgeKind
@@ -38,14 +39,58 @@ class Neo4jGraphStore:
         payload["attributes"] = json.loads(payload.pop("attributes_json", "{}"))
         return Artifact.model_validate(payload)
 
+    @staticmethod
+    def _version_from_record(record: Mapping[str, object] | None) -> int:
+        if record is None:
+            raise RuntimeError(
+                "Neo4j graph metadata is missing; seed the graph with reset() before use."
+            )
+        value = record.get("version")
+        if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+            raise RuntimeError("Neo4j graph metadata contains an invalid version.")
+        return value
+
+    @staticmethod
+    def _edge_create_query(edge: Edge) -> str:
+        if edge.kind not in set(EdgeKind):
+            raise ValueError(f"Unsupported relationship type: {edge.kind}")
+        return (
+            "MATCH (s:Artifact {id: $source_id}), (t:Artifact {id: $target_id}) "
+            f"CREATE (s)-[r:{edge.kind.value}]->(t) "
+            "SET r.scopes = $scopes, r.evidence_ref = $evidence_ref"
+        )
+
+    @staticmethod
+    def _edge_from_record(record: Mapping[str, Any]) -> Edge:
+        return Edge(
+            source_id=record["source_id"],
+            target_id=record["target_id"],
+            kind=EdgeKind(record["kind"]),
+            scopes=set(record["scopes"] or []),
+            evidence_ref=record["evidence_ref"] or None,
+        )
+
     def reset(self, *, version: int, artifacts: list[Artifact], edges: list[Edge]) -> None:
+        def seed_graph(transaction: Any) -> None:
+            transaction.run("MATCH (n) DETACH DELETE n").consume()
+            transaction.run(
+                "CREATE (:GraphMeta {id: 'main', version: $version})", version=version
+            ).consume()
+            for artifact in artifacts:
+                transaction.run(
+                    "CREATE (a:Artifact $props)", props=self._properties(artifact)
+                ).consume()
+            for edge in edges:
+                transaction.run(
+                    self._edge_create_query(edge),
+                    source_id=edge.source_id,
+                    target_id=edge.target_id,
+                    scopes=sorted(edge.scopes),
+                    evidence_ref=edge.evidence_ref or "",
+                ).consume()
+
         with self._driver.session(database=self._database) as session:
-            session.run("MATCH (n) DETACH DELETE n")
-            session.run("CREATE (:GraphMeta {id: 'main', version: $version})", version=version)
-        for artifact in artifacts:
-            self.add_artifact(artifact)
-        for edge in edges:
-            self.add_edge(edge)
+            session.execute_write(seed_graph)
 
     @property
     def version(self) -> int:
@@ -53,7 +98,7 @@ class Neo4jGraphStore:
             record = session.run(
                 "MATCH (m:GraphMeta {id: 'main'}) RETURN m.version AS version"
             ).single()
-        return int(record["version"] if record else 0)
+        return self._version_from_record(record)
 
     @property
     def version_label(self) -> str:
@@ -65,12 +110,12 @@ class Neo4jGraphStore:
                 "MATCH (m:GraphMeta {id: 'main'}) "
                 "SET m.version = m.version + 1 RETURN m.version AS version"
             ).single()
-        return f"graph-v{int(record['version'])}"
+        return f"graph-v{self._version_from_record(record)}"
 
     def add_artifact(self, artifact: Artifact) -> None:
         props = self._properties(artifact)
         with self._driver.session(database=self._database) as session:
-            session.run("CREATE (a:Artifact $props)", props=props)
+            session.run("CREATE (a:Artifact $props)", props=props).consume()
 
     def update_artifact(self, artifact: Artifact) -> None:
         props = self._properties(artifact)
@@ -98,46 +143,40 @@ class Neo4jGraphStore:
             return [self._artifact_from_record(record["props"]) for record in records]
 
     def add_edge(self, edge: Edge) -> None:
-        if edge.kind not in set(EdgeKind):
-            raise ValueError(f"Unsupported relationship type: {edge.kind}")
-        relationship = edge.kind.value
-        query = (
-            "MATCH (s:Artifact {id: $source_id}), (t:Artifact {id: $target_id}) "
-            f"CREATE (s)-[r:{relationship}]->(t) "
-            "SET r.scopes = $scopes, r.evidence_ref = $evidence_ref"
-        )
         with self._driver.session(database=self._database) as session:
             session.run(
-                query,
+                self._edge_create_query(edge),
                 source_id=edge.source_id,
                 target_id=edge.target_id,
                 scopes=sorted(edge.scopes),
-                evidence_ref=edge.evidence_ref,
-            )
+                evidence_ref=edge.evidence_ref or "",
+            ).consume()
 
     def list_edges(self) -> list[Edge]:
         with self._driver.session(database=self._database) as session:
             records = session.run(
                 "MATCH (s:Artifact)-[r]->(t:Artifact) "
                 "RETURN s.id AS source_id, t.id AS target_id, type(r) AS kind, "
-                "r.scopes AS scopes, r.evidence_ref AS evidence_ref"
+                "r.scopes AS scopes, r.evidence_ref AS evidence_ref "
+                "ORDER BY source_id, kind, target_id"
             )
-            return [
-                Edge(
-                    source_id=record["source_id"],
-                    target_id=record["target_id"],
-                    kind=EdgeKind(record["kind"]),
-                    scopes=set(record["scopes"] or []),
-                    evidence_ref=record["evidence_ref"],
-                )
-                for record in records
-            ]
+            return [self._edge_from_record(record) for record in records]
 
     def outgoing_edges(
         self, artifact_id: str, kinds: set[EdgeKind] | None = None
     ) -> list[Edge]:
-        edges = [edge for edge in self.list_edges() if edge.source_id == artifact_id]
-        return [edge for edge in edges if kinds is None or edge.kind in kinds]
+        kind_values = sorted(kind.value for kind in kinds) if kinds is not None else None
+        with self._driver.session(database=self._database) as session:
+            records = session.run(
+                "MATCH (s:Artifact {id: $artifact_id})-[r]->(t:Artifact) "
+                "WHERE $kinds IS NULL OR type(r) IN $kinds "
+                "RETURN s.id AS source_id, t.id AS target_id, type(r) AS kind, "
+                "r.scopes AS scopes, r.evidence_ref AS evidence_ref "
+                "ORDER BY target_id, kind",
+                artifact_id=artifact_id,
+                kinds=kind_values,
+            )
+            return [self._edge_from_record(record) for record in records]
 
     def snapshot(self) -> dict[str, object]:
         return {

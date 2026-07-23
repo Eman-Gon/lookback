@@ -62,6 +62,23 @@ export function GraphPanel({ state }: { state: AuthorityState | null }) {
   const preservedIds = new Set(report?.preserved_artifact_ids ?? []);
   const preservedTask = state?.artifacts.find((item) => item.id === "TASK-101");
   const invalidatedTask = state?.artifacts.find((item) => item.id === "TASK-102");
+  const changedDecision = state?.artifacts.find(
+    (item) => item.id === report?.changed_decision_id,
+  );
+  const ticketId = activePath.find((nodeId) => nodeId.startsWith("TICKET-"));
+  const decisionMentionsTicket = ticketId
+    ? report?.directly_mentioned_artifact_ids.includes(ticketId) ?? false
+    : null;
+  const ticketEvidence = ticketId === undefined
+    ? "No ticket appears on the selected provenance path."
+    : decisionMentionsTicket
+      ? `The decision text directly names ${ticketId}.`
+      : `The approved decision never names ${ticketId}; the graph finds it through lineage.`;
+  const ticketBadge = ticketId === undefined
+    ? "no ticket on path"
+    : decisionMentionsTicket
+      ? "direct reference present"
+      : "ticket not directly named";
 
   function relationship(sourceId: string, targetId: string) {
     return state?.edges.find((edge) => edge.source_id === sourceId && edge.target_id === targetId)?.kind.replaceAll("_", " ") ?? "DRIVES";
@@ -87,6 +104,30 @@ export function GraphPanel({ state }: { state: AuthorityState | null }) {
           />
         ))}
       </div>
+
+      {report && changedDecision ? (
+        <div className="impact-breakdown">
+          <div className="impact-heading">
+            <div>
+              <h3>What changed vs what stopped</h3>
+              <p>The payload separates provenance context from executable work.</p>
+            </div>
+            <span>{ticketBadge}</span>
+          </div>
+          <div className="impact-grid">
+            <article>
+              <small>Upstream provenance chain</small>
+              <strong>{report.upstream_chain_artifact_ids.join(" → ")}</strong>
+              <blockquote>“{changedDecision.text}”</blockquote>
+            </article>
+            <article>
+              <small>Downstream work stopped</small>
+              <strong>{report.stopped_work_artifact_ids.join(" · ")}</strong>
+              <p>{ticketEvidence}</p>
+            </article>
+          </div>
+        </div>
+      ) : null}
 
       {report && preservedTask && invalidatedTask ? (
         <div className="selective-result">

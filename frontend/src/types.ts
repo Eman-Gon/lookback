@@ -5,6 +5,7 @@ export interface Artifact {
   id: string;
   kind: string;
   title: string;
+  text: string;
   scopes: string[];
   validity: Validity;
   invalidated_scopes: string[];
@@ -29,6 +30,9 @@ export interface InvalidationReport {
   superseded_decision_id: string;
   affected_scopes: string[];
   affected_artifact_ids: string[];
+  upstream_chain_artifact_ids: string[];
+  stopped_work_artifact_ids: string[];
+  directly_mentioned_artifact_ids: string[];
   preserved_artifact_ids: string[];
   paths: InvalidationPath[];
   evidence_refs: string[];
@@ -99,4 +103,16 @@ export interface ExecuteResult {
 
 export interface ExecutionAttempt extends ExecuteResult {
   grant: "graph-v17" | "graph-v18";
+}
+
+export interface ServiceHealth {
+  authority: boolean;
+  agent: boolean;
+  executor: boolean;
+}
+
+export interface StateEventEnvelope<State> {
+  event: string;
+  data: State;
+  correlation_id: string;
 }

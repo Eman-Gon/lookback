@@ -34,6 +34,11 @@ Executor Service
 React operator interface
 ```
 
+The authority and agent expose server-sent event streams. Mutations publish state through a
+thread-safe in-process broker, so the React interface receives graph and loop changes without
+polling. The UI still performs explicit reads after a user-triggered phase as a deterministic
+postcondition check.
+
 ## Trust boundary
 
 The agent never mutates authority state or signs its own grants. The executor does not trust a UI verdict; it sends the grant back to the authority service for verification.
@@ -69,15 +74,40 @@ The default demo uses an in-memory graph so it works immediately. The graph inte
 5. Authority issues a new `graph-v18` grant.
 6. Executor accepts it.
 
+### Coordinated demo reset
+
+The frontend calls one agent-owned reset endpoint. The agent first asks the authority to seed
+`graph-v17`, validates the returned snapshot, and only then clears its local run. This removes the
+former `Promise.all` partial-reset race while keeping the services separately owned. It is
+cross-service coordination, not a distributed transaction. Destructive reset is environment-gated
+and intended only for a dedicated local/demo database.
+
 ## Optional integrations
 
 ### Neo4j
 
 Set `DRAGBACK_GRAPH_BACKEND=neo4j`. The `Neo4jGraphStore` persists typed artifacts, dynamic relationship types, graph metadata, scopes, validity, and evidence references.
+Its downstream traversal reads only matching outgoing relationships with Cypher. Seed/reset runs
+in one write transaction, and the opt-in `neo4j` test suite compares the resulting graph and exact
+invalidation report with the in-memory backend. The suite must target a disposable database because
+reset deletes all data in the configured Neo4j database.
 
 ### Anthropic
 
-Set `ANTHROPIC_API_KEY`. The LLM adapter can propose typed decisions and relationships, but the authority engine still validates approval, role, confidence, scope, and traversal deterministically.
+The optional Anthropic adapter is not wired into the deterministic live demo. An integration may
+instantiate it after installing `.[llm]` and setting `ANTHROPIC_API_KEY` plus `ANTHROPIC_MODEL`.
+Its output is untrusted structure: a decision mutation plus exact, zero-based source-text spans.
+Before a candidate can reach graph mutation, deterministic code verifies every span
+against the supplied source. A separate `TrustedDecisionContext` replaces all model-proposed
+governance metadata: source reference, approval status, authority role, confidence, affected
+scopes, and supersession target. Missing, out-of-bounds, or non-matching evidence returns
+`HUMAN_REVIEW` without changing the graph.
+
+Candidates with valid evidence still pass through the authority engine, which
+deterministically validates approval, role, extraction confidence, scope, and graph
+relationships. Low-confidence candidates also return `HUMAN_REVIEW` without a graph
+write. The default fixture extractor implements the same candidate interface without
+importing or requiring Anthropic.
 
 ### LangGraph
 

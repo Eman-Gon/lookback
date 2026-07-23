@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 from collections.abc import Callable
+from dataclasses import replace
+from typing import cast
 
 import httpx
 import pytest
@@ -26,6 +28,53 @@ def test_every_service_returns_the_request_correlation_id(service_app: FastAPI) 
     assert response.status_code == 200
     assert response.headers[support.CORRELATION_ID_HEADER] == CORRELATION_ID
     assert response.json()["correlation_id"] == CORRELATION_ID
+
+
+@pytest.mark.parametrize("origin", support.DEMO_FRONTEND_ORIGINS)
+@pytest.mark.parametrize(
+    "service_app",
+    [authority_api.app, agent_api.app, executor_api.app],
+    ids=["authority", "agent", "executor"],
+)
+def test_local_frontend_origins_are_allowed(
+    service_app: FastAPI,
+    origin: str,
+) -> None:
+    response = TestClient(service_app).options(
+        "/health",
+        headers={
+            "Origin": origin,
+            "Access-Control-Request-Method": "GET",
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.headers["access-control-allow-origin"] == origin
+
+
+def test_destructive_demo_reset_can_be_disabled(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    authority_version = authority_api.runtime.graph.version_label
+    monkeypatch.setattr(
+        authority_api,
+        "settings",
+        replace(authority_api.settings, demo_reset_enabled=False),
+    )
+    monkeypatch.setattr(
+        agent_api,
+        "settings",
+        replace(agent_api.settings, demo_reset_enabled=False),
+    )
+
+    authority_response = TestClient(authority_api.app).post("/graph/reset")
+    agent_response = TestClient(agent_api.app).post("/demo/reset-all")
+
+    assert authority_response.status_code == 403
+    assert authority_response.json()["error"]["code"] == "DEMO_RESET_DISABLED"
+    assert authority_api.runtime.graph.version_label == authority_version
+    assert agent_response.status_code == 403
+    assert agent_response.json()["error"]["code"] == "DEMO_RESET_DISABLED"
 
 
 def test_validation_errors_use_the_shared_error_contract() -> None:
@@ -61,7 +110,7 @@ def test_agent_forwards_correlation_id_to_authority(
     captured_headers: dict[str, str] = {}
 
     def fake_post(_url: str, **kwargs: object) -> httpx.Response:
-        captured_headers.update(kwargs["headers"])  # type: ignore[arg-type]
+        captured_headers.update(cast(dict[str, str], kwargs["headers"]))
         result = AuthorizationResult(
             verdict=Verdict.ALLOW,
             reason="Plan matches current approved requirements.",
@@ -90,7 +139,7 @@ def test_authority_timeout_has_a_stable_retryable_error(
     captured_headers: dict[str, str] = {}
 
     def timeout(_url: str, **kwargs: object) -> httpx.Response:
-        captured_headers.update(kwargs["headers"])  # type: ignore[arg-type]
+        captured_headers.update(cast(dict[str, str], kwargs["headers"]))
         raise httpx.ReadTimeout(
             "host-specific timeout details",
             request=httpx.Request("POST", "http://authority.invalid/authorize"),

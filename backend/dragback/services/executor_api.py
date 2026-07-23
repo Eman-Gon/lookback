@@ -8,6 +8,7 @@ from dragback.config import settings
 from dragback.domain import AgentPlan, GrantVerificationRequest, GrantVerificationResult
 from dragback.services.support import (
     CORRELATION_ID_HEADER,
+    DEMO_FRONTEND_ORIGINS,
     correlated_payload,
     install_api_support,
     post_model,
@@ -24,7 +25,7 @@ class ExecuteRequest(BaseModel):
 app = FastAPI(title="Dragback Mock Executor", version="0.1.0")
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173"],
+    allow_origins=DEMO_FRONTEND_ORIGINS,
     allow_methods=["*"],
     allow_headers=["*"],
     expose_headers=[CORRELATION_ID_HEADER],

@@ -41,6 +41,9 @@ where = ["backend"]
 [tool.pytest.ini_options]
 testpaths = ["backend/tests"]
 addopts = "-q"
+markers = [
+  "neo4j: opt-in integration tests that reset a disposable Neo4j database",
+]
 
 [tool.ruff]
 line-length = 100

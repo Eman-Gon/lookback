@@ -17,6 +17,10 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 CORRELATION_ID_HEADER = "X-Correlation-ID"
+DEMO_FRONTEND_ORIGINS = [
+    "http://localhost:5173",
+    "http://127.0.0.1:5173",
+]
 _CORRELATION_ID_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}$")
 _correlation_id: ContextVar[str | None] = ContextVar("dragback_correlation_id", default=None)
 logger = logging.getLogger(__name__)

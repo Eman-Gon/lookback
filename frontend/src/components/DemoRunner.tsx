@@ -1,12 +1,6 @@
-export type DemoPhaseId =
-  | "reset"
-  | "start"
-  | "tests"
-  | "decision"
-  | "old-grant"
-  | "recheck"
-  | "replan"
-  | "new-grant";
+import type { DemoPhaseId } from "../demo-control";
+
+export type { DemoPhaseId } from "../demo-control";
 
 export interface DemoPhase {
   id: DemoPhaseId;
@@ -77,10 +71,10 @@ export function DemoRunner({
           <p>One click advances through eight deterministic API phases, pausing on every proof point.</p>
         </div>
         <div className="runner-actions">
-          {isRunning ? (
+          {isBusy ? (
             <button className="stop-button" type="button" onClick={onStop}>
               <StopIcon />
-              Stop demo
+              {isRunning ? "Stop demo" : "Cancel phase"}
             </button>
           ) : (
             <button className="run-button" type="button" onClick={onRun} disabled={isBusy}>

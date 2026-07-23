@@ -27,3 +27,22 @@ Seeded decisions and edges are the default. Anthropic extraction is optional. Re
 ## ADR-007 — competitor names remain in Q&A
 
 The default pitch uses category-level differentiation. Reason: named comparisons are useful only after judges understand Dragback's mechanism.
+
+## ADR-008 — extracted evidence is an untrusted candidate
+
+An extractor must return exact character spans from the supplied source. Deterministic
+ingestion code validates the offsets and text, then replaces every governance field with
+authenticated `TrustedDecisionContext`: source, approval, role, confidence, scopes, effective
+time, and supersession target. It also normalizes the candidate decision to `VALID`
+with no invalidated scopes before submitting the mutation to the authority engine. Invalid
+evidence or low-confidence trusted context returns `HUMAN_REVIEW` without a graph write. Reason:
+an LLM may propose provenance structure, but it cannot create evidence, claim authority, carry
+forward invalidation state, control precedence, or issue a verdict.
+
+## ADR-009 — destructive graph seeding requires backend-aware opt-in
+
+The in-memory backend seeds the fixture automatically in local development/demo environments so
+the deterministic demo remains zero-config. Neo4j never enables destructive startup seeding or
+reset by default; `DRAGBACK_DEMO_RESET_ENABLED=true` must be supplied explicitly and the target
+must be a dedicated demo database. Reason: connecting a development process to a remote graph must
+not make database deletion an implicit startup side effect.

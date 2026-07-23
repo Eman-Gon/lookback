@@ -134,6 +134,9 @@ class InvalidationReport(BaseModel):
     superseded_decision_id: str
     affected_scopes: set[str]
     affected_artifact_ids: list[str] = Field(default_factory=list)
+    upstream_chain_artifact_ids: list[str] = Field(default_factory=list)
+    stopped_work_artifact_ids: list[str] = Field(default_factory=list)
+    directly_mentioned_artifact_ids: list[str] = Field(default_factory=list)
     preserved_artifact_ids: list[str] = Field(default_factory=list)
     paths: list[InvalidationPath] = Field(default_factory=list)
     evidence_refs: list[str] = Field(default_factory=list)

@@ -30,6 +30,13 @@ Emphasize:
 
 Show the path lighting up.
 
+Point to the two separate payload summaries:
+
+- upstream provenance chain: `DEC-018 → DEC-004 → SPEC-009 → TICKET-100`;
+- downstream work stopped: `TASK-102 · PLAN-027`.
+
+Say: “The approved decision text never names `TICKET-100`; the graph finds it through lineage.”
+
 ## 2:15–2:50 — selective invalidation
 
 Show side by side:
@@ -56,6 +63,10 @@ The executor, not the agent or UI, performs this check.
 ## 3:25–4:00 — replan
 
 Show the loop move to `REPLAN`. The corrected plan preserves CSV generation and changes the audience to `admin_only`. It receives a new `graph-v18` grant and the executor accepts it.
+
+If asked how general the replanner is, say: “Enforcement, traversal, invalidation, and
+reauthorization are general. The corrective `PLAN-028` text is a deterministic demo template; a
+production planner would propose that candidate, then pass through the same authority checks.”
 
 ## Code peek — optional 30 seconds
 

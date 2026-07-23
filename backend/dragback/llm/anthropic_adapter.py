@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 
-from dragback.domain import DecisionMutation
+from dragback.llm.extractor import DecisionExtractionCandidate
 
 
 class AnthropicDecisionExtractor:
@@ -21,8 +21,8 @@ class AnthropicDecisionExtractor:
         self._client = Anthropic(api_key=api_key)
         self._model = model
 
-    def extract(self, raw_text: str) -> DecisionMutation:
-        schema = DecisionMutation.model_json_schema()
+    def extract(self, raw_text: str) -> DecisionExtractionCandidate:
+        schema = DecisionExtractionCandidate.model_json_schema()
         response = self._client.messages.create(
             model=self._model,
             max_tokens=1200,
@@ -31,7 +31,10 @@ class AnthropicDecisionExtractor:
                 {
                     "role": "user",
                     "content": (
-                        "Extract a candidate company decision mutation from the text below. "
+                        "Extract an untrusted candidate company decision mutation from the text "
+                        "below. Evidence spans must quote the source exactly and use zero-based, "
+                        "half-open character offsets. Do not invent evidence or an authority "
+                        "verdict. The decision confidence must reflect extraction confidence. "
                         "Return JSON only and conform to this JSON Schema:\n"
                         f"{json.dumps(schema)}\n\nTEXT:\n{raw_text}"
                     ),
@@ -39,4 +42,4 @@ class AnthropicDecisionExtractor:
             ],
         )
         text = "".join(block.text for block in response.content if hasattr(block, "text"))
-        return DecisionMutation.model_validate_json(text)
+        return DecisionExtractionCandidate.model_validate_json(text)

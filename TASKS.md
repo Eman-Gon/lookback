@@ -18,7 +18,7 @@
 - [x] Expose the independent executor API.
 - [x] Add robust service-to-service timeout and error handling.
 - [x] Add a shared correlation ID to every response and event.
-- [ ] Add SSE streams for graph and loop-state updates.
+- [x] Add SSE streams for graph and loop-state updates.
 
 ## P2 — frontend
 
@@ -32,22 +32,22 @@
 ## P3 — Neo4j
 
 - [x] Provide a Neo4j store implementation and Docker Compose service.
-- [ ] Add Neo4j integration tests behind an opt-in marker.
-- [ ] Confirm the Cypher traversal returns the same report as the memory store.
-- [ ] Add a seed/reset endpoint for AuraDB.
+- [x] Add Neo4j integration tests behind an opt-in marker.
+- [x] Confirm the Cypher traversal returns the same report as the memory store (opt-in Aura run).
+- [x] Add a seed/reset endpoint for AuraDB.
 
 ## P4 — optional LLM extraction
 
 - [x] Define an extraction interface and fixture implementation.
 - [x] Add an Anthropic adapter skeleton with structured JSON output.
-- [ ] Add evidence-span validation before accepting a proposed edge.
-- [ ] Add a review state when extraction confidence is below threshold.
-- [ ] Ensure LLM extraction is never required for the deterministic demo.
+- [x] Add evidence-span validation before accepting a proposed edge.
+- [x] Add a review state when extraction confidence is below threshold.
+- [x] Ensure LLM extraction is never required for the deterministic demo.
 
 ## P5 — presentation hardening
 
 - [ ] Rehearse the 3–5 minute flow from `docs/DEMO_SCRIPT.md`.
 - [ ] Record a backup screen capture.
-- [ ] Keep competitor comparisons in Q&A, not the opening.
+- [x] Keep competitor comparisons in Q&A, not the opening.
 - [x] Add a visible “real vs simulated” panel.
-- [ ] Freeze fixture IDs and demo data before presentation day.
+- [x] Freeze fixture IDs and demo data before presentation day.

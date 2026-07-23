@@ -40,12 +40,26 @@ python3 -m venv .venv
 source .venv/bin/activate  # Windows: .venv\\Scripts\\activate
 pip install -e ".[dev]"
 make demo
-make test
+make check
 ```
 
 No Anthropic key or Neo4j database is required for those commands.
 
-## Run the three services
+## Run the full stack
+
+Start all three APIs and the frontend, with readiness checks and coordinated cleanup. This command
+pins the local stack to `127.0.0.1` on ports `8001`–`8003` and `5173`, overriding conflicting
+service URL values from the root `.env` for the processes it launches. It explicitly enables the
+demo reset flow, which deletes and reseeds the selected graph backend; configure only a dedicated
+local/demo database before running it:
+
+```bash
+make stack
+```
+
+Open `http://127.0.0.1:5173`.
+
+## Run services separately
 
 Open three terminals after installing dependencies:
 
@@ -74,8 +88,31 @@ cp .env.example .env
 ```
 
 - Set `DRAGBACK_GRAPH_BACKEND=neo4j` and provide Neo4j credentials to use a real graph database.
-- Set `ANTHROPIC_API_KEY` to replace fixture extraction/replanning with Claude-backed structured extraction.
+- The optional Anthropic adapter is an explicit extension point, not part of the live demo path.
+  Install `.[llm]`, set `ANTHROPIC_API_KEY` and `ANTHROPIC_MODEL`, then wire the adapter through
+  `TrustedDecisionContext` supplied by authenticated ingestion. Exact source spans are checked
+  deterministically; model-proposed approval, role, confidence, effective time, scope,
+  supersession, and pre-existing invalidation state are ignored and never control mutation.
 - Keep the deterministic authority engine as the final source of `ALLOW`, `REPLAN`, `BLOCK`, and `HUMAN_REVIEW` verdicts.
+
+The local memory backend keeps zero-config fixture seeding in development/demo environments.
+Neo4j never enables destructive startup seeding or `/graph/reset` by default: set
+`DRAGBACK_DEMO_RESET_ENABLED=true` explicitly and use only a dedicated Dragback demo database.
+
+### Neo4j parity tests
+
+The Neo4j suite is opt-in because it resets the configured database. Use only a disposable
+database, provide connection values through the environment, and keep credentials out of
+command history and source control.
+
+```bash
+pip install -e ".[dev,graph]"
+DRAGBACK_RUN_NEO4J_TESTS=1 python -m pytest -m neo4j
+```
+
+The suite seeds `graph-v17` repeatedly and compares the persisted graph, selective invalidation
+report, and `ALLOW`/`REPLAN` behavior with the in-memory store. Without the opt-in variable, the
+tests skip and the normal deterministic suite needs no Neo4j credentials.
 
 ## Repository layout
 
