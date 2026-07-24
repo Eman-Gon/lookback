@@ -196,6 +196,37 @@ former `Promise.all` partial-reset race while keeping the services separately ow
 cross-service coordination, not a distributed transaction. Destructive reset is environment-gated
 and intended only for a dedicated local/demo database.
 
+### Persistent Live Workspace
+
+1. The agent service validates a friendly user document and writes it atomically to the configured
+   JSON repository. The baseline remains a proposal.
+2. The agent sends the explicit graph seed and authority policy to an isolated authority context.
+3. The authority validates the acting role and approves the baseline without allowing the agent to
+   manufacture a verdict.
+4. Initial authorization crosses agent → authority and the signed token remains internal.
+5. A proposed decision is persisted without graph effects. Its approval crosses into the authority,
+   where role, scope, confidence, and requirement shape are checked before mutation.
+6. The real graph traversal selectively invalidates intersecting Tasks and the active AgentPlan.
+7. Initial and replacement verification cross agent → executor → authority. Public views expose
+   stable verification codes but never signed tokens.
+8. On restart, the agent reconstructs an absent authority context by replaying recorded approvals
+   into the original graph seed. The JSON history remains the user-visible audit ledger.
+
+Before reusing an existing context, the agent compares its graph version, baseline approval state,
+authority policy, immutable artifact signatures, exact Decision lineage, and `SUPERSEDES` edges
+with persistence. A mismatched or one-step-ahead context is discarded and replayed from the stored
+record. This makes context-ID collisions and lost-response recovery fail closed.
+
+The executor's `STALE_SNAPSHOT` result is a required state-machine proof, not presentation
+metadata. `CHANGE_APPLIED` cannot skip directly to Plan correction, and a generic grant failure
+cannot satisfy the stale-authorization claim.
+
+The default store is `.dragback/live-workspaces.json`; `DRAGBACK_WORKSPACE_STORE` may point to a
+different file. It contains internal signed grants needed for restart verification and is written
+with owner-only file permissions; public API views strip every signed token. Atomic replacement
+protects against partial writes, but this prototype assumes one agent-service writer and is not a
+transactional multi-process database.
+
 ## Optional integrations
 
 ### Neo4j

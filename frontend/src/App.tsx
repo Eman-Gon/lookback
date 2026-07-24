@@ -6,6 +6,7 @@ import { GrantPanel } from "./components/GrantPanel";
 import { LoopPanel } from "./components/LoopPanel";
 import { RealityPanel } from "./components/RealityPanel";
 import { ScenarioLabRoute } from "./scenario-lab/ScenarioLabRoute";
+import { LiveWorkspaceRoute } from "./live-workspace/LiveWorkspaceRoute";
 import {
   completedPhasesAfter,
   DemoOperationController,
@@ -454,7 +455,9 @@ function GuidedProof() {
 }
 
 export default function App() {
-  return window.location.pathname.startsWith("/scenario-lab") ? (
+  return window.location.pathname.startsWith("/live-workspace") ? (
+    <LiveWorkspaceRoute />
+  ) : window.location.pathname.startsWith("/scenario-lab") ? (
     <ScenarioLabRoute />
   ) : (
     <GuidedProof />

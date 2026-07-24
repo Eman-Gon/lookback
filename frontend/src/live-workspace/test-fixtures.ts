@@ -1,0 +1,163 @@
+import { mapLiveWorkspace } from "./api";
+
+type RawWorkspaceFixture = Parameters<typeof mapLiveWorkspace>[0];
+type RawArtifactFixture = RawWorkspaceFixture["baseline_decision"];
+
+const artifact = (
+  id: string,
+  kind: string,
+  title: string,
+  scopes = ["refund.execution"],
+): RawArtifactFixture => ({
+  id,
+  kind,
+  title,
+  text: `${title} detail`,
+  scopes,
+  validity: "VALID",
+  invalidated_scopes: [],
+  confidence: 1,
+  attributes: {},
+});
+
+export const RAW_WORKSPACE: RawWorkspaceFixture = {
+  id: "refund-operations",
+  name: "Refund operations",
+  description: "Imported workspace",
+  status: "initial-grant-rejected",
+  graph_version: "graph-v18",
+  baseline_approved: true,
+  baseline_decision: {
+    ...artifact("DEC-001", "Decision", "Automatic refunds"),
+    approval_status: "approved",
+    authority_role: "finance-admin",
+  },
+  specification: artifact("SPEC-001", "Specification", "Refund controls"),
+  ticket: artifact("PAY-104", "Ticket", "Automate refunds"),
+  tasks: [
+    artifact("TASK-001", "Task", "Calculate amount", ["refund.calculation"]),
+    artifact("TASK-003", "Task", "Issue automatically"),
+  ],
+  current_plan: {
+    id: "PLAN-001",
+    ticket_id: "PAY-104",
+    objective: "Automate refunds",
+    actions: [
+      {
+        id: "ACTION-001",
+        description: "Issue automatically",
+        scopes: ["refund.execution"],
+        attributes: { task_id: "TASK-003", mode: "automatic" },
+      },
+    ],
+  },
+  authority_policy: { "refund.execution": ["finance-admin"] },
+  pending_mutation: null,
+  latest_approved_mutation: {
+    decision: {
+      ...artifact(
+        "DEC-002",
+        "Decision",
+        "Refunds over $500 require human approval",
+      ),
+      approval_status: "approved",
+      authority_role: "finance-admin",
+    },
+    supersedes_id: "DEC-001",
+    affected_scopes: ["refund.execution"],
+  },
+  initial_authorization: {
+    verdict: "ALLOW",
+    reason: "Authorized",
+    graph_version: "graph-v17",
+    task_id: "PAY-104",
+    affected_scopes: [],
+    mismatches: [],
+    current_requirements: {},
+    invalidation_path: [],
+    invalidated_artifact_ids: [],
+    preserved_artifact_ids: [],
+    evidence_refs: [],
+    grant: {
+      authorization_id: "AUTH-001",
+      run_id: "RUN-001",
+      task_id: "PAY-104",
+      decision_snapshot: "graph-v17",
+      plan_hash: "abc123",
+      verdict: "ALLOW",
+      issued_at: "2026-07-23T12:00:00Z",
+      expires_at: "2026-07-23T13:00:00Z",
+    },
+  },
+  conflict_authorization: {
+    verdict: "REPLAN",
+    reason: "Plan conflicts",
+    graph_version: "graph-v18",
+    task_id: "PAY-104",
+    affected_scopes: ["refund.execution"],
+    mismatches: [],
+    current_requirements: {
+      "refund.execution": { mode: "human_approval_over_500" },
+    },
+    invalidation_path: [
+      "DEC-002",
+      "DEC-001",
+      "SPEC-001",
+      "PAY-104",
+      "TASK-003",
+      "PLAN-001",
+    ],
+    invalidated_artifact_ids: ["TASK-003", "PLAN-001"],
+    preserved_artifact_ids: ["TASK-001"],
+    evidence_refs: ["workspace://refund-operations/decisions/DEC-002"],
+    grant: null,
+  },
+  replacement_authorization: null,
+  invalidation_report: {
+    graph_version: "graph-v18",
+    changed_decision_id: "DEC-002",
+    superseded_decision_id: "DEC-001",
+    affected_scopes: ["refund.execution"],
+    affected_artifact_ids: ["TASK-003", "PLAN-001"],
+    upstream_chain_artifact_ids: ["DEC-002", "DEC-001", "SPEC-001"],
+    stopped_work_artifact_ids: ["TASK-003", "PLAN-001"],
+    directly_mentioned_artifact_ids: [],
+    preserved_artifact_ids: ["TASK-001"],
+    preserved_task_ids: ["TASK-001"],
+    invalidated_task_ids: ["TASK-003"],
+    needs_review_artifact_ids: ["PLAN-001"],
+    paths: [
+      {
+        artifact_id: "PLAN-001",
+        node_ids: [
+          "DEC-002",
+          "DEC-001",
+          "SPEC-001",
+          "PAY-104",
+          "TASK-003",
+          "PLAN-001",
+        ],
+      },
+    ],
+    evidence_refs: ["workspace://refund-operations/decisions/DEC-002"],
+  },
+  initial_verification: {
+    applied: false,
+    reason: "The grant snapshot is stale.",
+    verification_code: "STALE_SNAPSHOT",
+    pull_request_url: null,
+  },
+  replacement_verification: null,
+  history: [
+    {
+      sequence: 1,
+      event_type: "workspace.imported",
+      detail: "Workspace imported.",
+      created_at: "2026-07-23T12:00:00Z",
+      actor_role: null,
+      data: {},
+    },
+  ],
+  created_at: "2026-07-23T12:00:00Z",
+  updated_at: "2026-07-23T12:05:00Z",
+};

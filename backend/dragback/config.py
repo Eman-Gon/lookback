@@ -44,6 +44,10 @@ class Settings:
     agent_url: str = os.getenv("DRAGBACK_AGENT_URL", "http://localhost:8002")
     executor_url: str = os.getenv("DRAGBACK_EXECUTOR_URL", "http://localhost:8003")
     service_timeout_seconds: float = float(os.getenv("DRAGBACK_SERVICE_TIMEOUT_SECONDS", "5"))
+    workspace_store: str = os.getenv(
+        "DRAGBACK_WORKSPACE_STORE",
+        ".dragback/live-workspaces.json",
+    )
     neo4j_uri: str = os.getenv("NEO4J_URI", "bolt://localhost:7687")
     neo4j_username: str = os.getenv("NEO4J_USERNAME", "neo4j")
     neo4j_password: str = os.getenv("NEO4J_PASSWORD", "dragback-demo")

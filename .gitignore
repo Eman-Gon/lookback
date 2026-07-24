@@ -9,6 +9,7 @@ __pycache__/
 .ruff_cache/
 .coverage
 htmlcov/
+.dragback/
 
 frontend/node_modules/
 frontend/dist/

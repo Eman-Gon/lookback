@@ -37,6 +37,22 @@ from dragback.services.support import (
     install_api_support,
     post_model,
 )
+from dragback.workspaces.models import (
+    LiveWorkspaceImportRequest,
+    WorkspaceApprovalRequest,
+    WorkspaceEmptyRequest,
+    WorkspacePlanUpdateRequest,
+    WorkspaceProposalRequest,
+)
+from dragback.workspaces.orchestrator import (
+    LiveWorkspaceOrchestrator,
+    LiveWorkspaceStateConflict,
+)
+from dragback.workspaces.repository import (
+    JsonFileLiveWorkspaceRepository,
+    LiveWorkspaceConflict,
+    LiveWorkspaceNotFound,
+)
 
 app = FastAPI(title="Dragback Agent Service", version="0.1.0")
 app.add_middleware(
@@ -55,6 +71,9 @@ initial_plan: AgentPlan | None = None
 event_broker = EventBroker()
 state_lock = RLock()
 scenario_runner = ScenarioRunner()
+workspace_orchestrator = LiveWorkspaceOrchestrator(
+    repository=JsonFileLiveWorkspaceRepository(settings.workspace_store)
+)
 
 
 class EmptyRequest(BaseModel):
@@ -324,6 +343,163 @@ def scenario_start(request: ScenarioRunRequest) -> dict[str, object]:
     except (KeyError, ScenarioRunConflict) as exc:
         raise _scenario_api_error(exc) from exc
     return correlated_payload(run)
+
+
+def _workspace_api_error(exc: Exception) -> ApiError:
+    if isinstance(exc, LiveWorkspaceNotFound):
+        return ApiError(
+            status_code=404,
+            code="LIVE_WORKSPACE_NOT_FOUND",
+            message=f"Unknown Live Workspace: {exc.workspace_id}",
+        )
+    if isinstance(exc, (LiveWorkspaceConflict, LiveWorkspaceStateConflict)):
+        return ApiError(
+            status_code=409,
+            code="LIVE_WORKSPACE_CONFLICT",
+            message=str(exc),
+        )
+    return ApiError(
+        status_code=500,
+        code="LIVE_WORKSPACE_FAILED",
+        message="The Live Workspace operation could not be completed.",
+    )
+
+
+@app.post("/live-workspaces/import", status_code=201)
+def import_live_workspace(
+    request: LiveWorkspaceImportRequest,
+) -> dict[str, object]:
+    try:
+        workspace = workspace_orchestrator.import_workspace(request)
+    except (LiveWorkspaceConflict, LiveWorkspaceStateConflict) as exc:
+        raise _workspace_api_error(exc) from exc
+    return correlated_payload(workspace)
+
+
+@app.get("/live-workspaces")
+def list_live_workspaces() -> dict[str, object]:
+    return correlated_payload(workspace_orchestrator.list())
+
+
+@app.get("/live-workspaces/{workspace_id}")
+def get_live_workspace(workspace_id: str) -> dict[str, object]:
+    try:
+        workspace = workspace_orchestrator.get(workspace_id)
+    except LiveWorkspaceNotFound as exc:
+        raise _workspace_api_error(exc) from exc
+    return correlated_payload(workspace)
+
+
+@app.post("/live-workspaces/{workspace_id}/baseline/approve")
+def approve_live_workspace_baseline(
+    workspace_id: str,
+    request: WorkspaceApprovalRequest,
+) -> dict[str, object]:
+    try:
+        workspace = workspace_orchestrator.approve_baseline(workspace_id, request)
+    except (LiveWorkspaceNotFound, LiveWorkspaceStateConflict) as exc:
+        raise _workspace_api_error(exc) from exc
+    return correlated_payload(workspace)
+
+
+@app.post("/live-workspaces/{workspace_id}/authorize")
+def authorize_live_workspace(
+    workspace_id: str,
+    _request: WorkspaceEmptyRequest,
+) -> dict[str, object]:
+    try:
+        workspace = workspace_orchestrator.authorize(workspace_id)
+    except (LiveWorkspaceNotFound, LiveWorkspaceStateConflict) as exc:
+        raise _workspace_api_error(exc) from exc
+    return correlated_payload(workspace)
+
+
+@app.post("/live-workspaces/{workspace_id}/decisions/propose")
+def propose_live_workspace_decision(
+    workspace_id: str,
+    request: WorkspaceProposalRequest,
+) -> dict[str, object]:
+    try:
+        workspace = workspace_orchestrator.propose_decision(workspace_id, request)
+    except (LiveWorkspaceNotFound, LiveWorkspaceStateConflict) as exc:
+        raise _workspace_api_error(exc) from exc
+    return correlated_payload(workspace)
+
+
+@app.post("/live-workspaces/{workspace_id}/decisions/{decision_id}/approve")
+def approve_live_workspace_decision(
+    workspace_id: str,
+    decision_id: str,
+    request: WorkspaceApprovalRequest,
+) -> dict[str, object]:
+    try:
+        workspace = workspace_orchestrator.approve_decision(
+            workspace_id,
+            decision_id,
+            request,
+        )
+    except (LiveWorkspaceNotFound, LiveWorkspaceStateConflict) as exc:
+        raise _workspace_api_error(exc) from exc
+    return correlated_payload(workspace)
+
+
+@app.delete("/live-workspaces/{workspace_id}/decisions/pending")
+def cancel_live_workspace_pending_decision(
+    workspace_id: str,
+) -> dict[str, object]:
+    try:
+        workspace = workspace_orchestrator.cancel_pending_decision(workspace_id)
+    except (LiveWorkspaceNotFound, LiveWorkspaceStateConflict) as exc:
+        raise _workspace_api_error(exc) from exc
+    return correlated_payload(workspace)
+
+
+@app.post("/live-workspaces/{workspace_id}/grants/initial/verify")
+def verify_live_workspace_initial_grant(
+    workspace_id: str,
+    _request: WorkspaceEmptyRequest,
+) -> dict[str, object]:
+    try:
+        workspace = workspace_orchestrator.verify_initial_grant(workspace_id)
+    except (LiveWorkspaceNotFound, LiveWorkspaceStateConflict) as exc:
+        raise _workspace_api_error(exc) from exc
+    return correlated_payload(workspace)
+
+
+@app.put("/live-workspaces/{workspace_id}/plan")
+def update_live_workspace_plan(
+    workspace_id: str,
+    request: WorkspacePlanUpdateRequest,
+) -> dict[str, object]:
+    try:
+        workspace = workspace_orchestrator.update_plan(workspace_id, request)
+    except (LiveWorkspaceNotFound, LiveWorkspaceStateConflict) as exc:
+        raise _workspace_api_error(exc) from exc
+    return correlated_payload(workspace)
+
+
+@app.post("/live-workspaces/{workspace_id}/reauthorize")
+def reauthorize_live_workspace(
+    workspace_id: str,
+    _request: WorkspaceEmptyRequest,
+) -> dict[str, object]:
+    try:
+        workspace = workspace_orchestrator.reauthorize(workspace_id)
+    except (LiveWorkspaceNotFound, LiveWorkspaceStateConflict) as exc:
+        raise _workspace_api_error(exc) from exc
+    return correlated_payload(workspace)
+
+
+@app.post("/live-workspaces/{workspace_id}/grants/replacement/verify")
+def verify_live_workspace_replacement_grant(
+    workspace_id: str,
+    _request: WorkspaceEmptyRequest,
+) -> dict[str, object]:
+    try:
+        workspace = workspace_orchestrator.verify_replacement_grant(workspace_id)
+    except (LiveWorkspaceNotFound, LiveWorkspaceStateConflict) as exc:
+        raise _workspace_api_error(exc) from exc
+    return correlated_payload(workspace)
 
 
 @app.get("/scenario-lab/runs/{run_id}")

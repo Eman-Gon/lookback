@@ -28,9 +28,22 @@ from dragback.services.support import (
     correlated_payload,
     install_api_support,
 )
+from dragback.workspaces.authority_contexts import (
+    DynamicAuthorityContextConflict,
+    DynamicAuthorityContextCreateRequest,
+    DynamicAuthorityContextNotFound,
+    DynamicAuthorityContextRegistry,
+    DynamicMutationApprovalRequest,
+)
+from dragback.workspaces.models import WorkspaceApprovalRequest
 
 runtime = create_authority_runtime()
 scenario_contexts = ScenarioAuthorityContextRegistry(
+    grant_secret=settings.grant_secret,
+    grant_ttl_seconds=settings.grant_ttl_seconds,
+    authority_threshold=settings.authority_threshold,
+)
+workspace_contexts = DynamicAuthorityContextRegistry(
     grant_secret=settings.grant_secret,
     grant_ttl_seconds=settings.grant_ttl_seconds,
     authority_threshold=settings.authority_threshold,
@@ -254,4 +267,95 @@ def verify_grant_in_scenario_context(
             code="SCENARIO_CONTEXT_NOT_FOUND",
             message="The requested Scenario Lab authority context does not exist.",
         ) from exc
+    return correlated_payload(result)
+
+
+def _workspace_context_error(exc: Exception) -> ApiError:
+    if isinstance(exc, DynamicAuthorityContextNotFound):
+        return ApiError(
+            status_code=404,
+            code="WORKSPACE_CONTEXT_NOT_FOUND",
+            message=str(exc),
+        )
+    return ApiError(
+        status_code=409,
+        code="WORKSPACE_CONTEXT_CONFLICT",
+        message=str(exc),
+    )
+
+
+@app.post("/live-workspaces/authority/contexts", status_code=201)
+def create_workspace_authority_context(
+    request: DynamicAuthorityContextCreateRequest,
+) -> dict[str, object]:
+    try:
+        state = workspace_contexts.create(request)
+    except DynamicAuthorityContextConflict as exc:
+        raise _workspace_context_error(exc) from exc
+    return correlated_payload(state)
+
+
+@app.get("/live-workspaces/authority/contexts/{context_id}")
+def workspace_authority_context_state(context_id: str) -> dict[str, object]:
+    try:
+        state = workspace_contexts.state(context_id)
+    except DynamicAuthorityContextNotFound as exc:
+        raise _workspace_context_error(exc) from exc
+    return correlated_payload(state)
+
+
+@app.delete("/live-workspaces/authority/contexts/{context_id}")
+def delete_workspace_authority_context(context_id: str) -> dict[str, object]:
+    try:
+        workspace_contexts.delete(context_id)
+    except DynamicAuthorityContextNotFound as exc:
+        raise _workspace_context_error(exc) from exc
+    return correlated_payload({"context_id": context_id, "deleted": True})
+
+
+@app.post("/live-workspaces/authority/contexts/{context_id}/baseline/approve")
+def approve_workspace_baseline(
+    context_id: str,
+    request: WorkspaceApprovalRequest,
+) -> dict[str, object]:
+    try:
+        state = workspace_contexts.approve_baseline(context_id, request)
+    except (DynamicAuthorityContextNotFound, DynamicAuthorityContextConflict) as exc:
+        raise _workspace_context_error(exc) from exc
+    return correlated_payload(state)
+
+
+@app.post("/live-workspaces/authority/contexts/{context_id}/mutations/approve")
+def approve_workspace_mutation(
+    context_id: str,
+    request: DynamicMutationApprovalRequest,
+) -> dict[str, object]:
+    try:
+        result = workspace_contexts.approve_mutation(context_id, request)
+    except (DynamicAuthorityContextNotFound, DynamicAuthorityContextConflict) as exc:
+        raise _workspace_context_error(exc) from exc
+    return correlated_payload(result)
+
+
+@app.post("/live-workspaces/authority/contexts/{context_id}/authorize")
+def authorize_in_workspace_context(
+    context_id: str,
+    request: AuthorizationRequest,
+) -> dict[str, object]:
+    try:
+        result = workspace_contexts.authorize(context_id, request)
+    except DynamicAuthorityContextNotFound as exc:
+        raise _workspace_context_error(exc) from exc
+    return correlated_payload(result)
+
+
+@app.post("/live-workspaces/authority/contexts/{context_id}/grants/verify")
+def verify_grant_in_workspace_context(
+    context_id: str,
+    request: GrantVerificationRequest,
+) -> dict[str, object]:
+    try:
+        result = workspace_contexts.verify_grant(context_id, request)
+    except DynamicAuthorityContextNotFound as exc:
+        raise _workspace_context_error(exc) from exc
     return correlated_payload(result)

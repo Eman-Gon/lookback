@@ -328,6 +328,88 @@ Run All is serialized. Results retain the latest summary per scenario, detailed 
 runtimes are bounded to five per scenario, and completed authority contexts are deleted. This is
 session-only process memory, not durable benchmark history; an agent-service restart clears it.
 
+### Live Workspaces
+
+Live Workspaces are the user-owned practical path. Unlike Scenario Lab, their definitions,
+authorization state, verification results, and history survive agent-service restarts in the JSON
+file selected by `DRAGBACK_WORKSPACE_STORE` (default
+`.dragback/live-workspaces.json`). The public views never expose signed grant tokens.
+
+#### `POST /live-workspaces/import`
+
+Imports structured JSON containing:
+
+- `id`, `name`, and optional `description`;
+- `authority_policy`, keyed by governed scope;
+- one proposed baseline `Decision` whose `attributes.requirements` exactly match its scopes;
+- one `Specification`, one `Ticket`, one or more `Task` artifacts, and one `AgentPlan`;
+- optional typed `edges` and an optional numeric `graph_version` (default `17`).
+
+When edges are omitted, Dragback deterministically creates
+`Decision → Specification → Ticket → Task → AgentPlan` provenance. Explicit edge sets are
+augmented with missing `Task -[:CURRENTLY_DRIVES]-> AgentPlan` links so the active plan remains
+reachable. Every baseline requirement must be an object and its scope must continue through the
+Specification, Ticket, at least one Task, a matching Plan action, and every canonical typed edge
+between them. The baseline authority role must be allowed by policy for every governed scope.
+Plan attributes and optional `task_id` references are preflighted with the same matching semantics
+used for initial authorization, so imports that could only receive `REPLAN` before any upstream
+change are rejected. Import does not approve the baseline or issue a grant.
+
+#### Workspace state and actions
+
+| Route | Purpose |
+|---|---|
+| `GET /live-workspaces` | List persistent token-free workspace views |
+| `GET /live-workspaces/{id}` | Read one workspace and its ordered history |
+| `POST /live-workspaces/{id}/baseline/approve` | Approve the baseline with `{ "actor_role": "…" }` |
+| `POST /live-workspaces/{id}/authorize` | Ask the authority for the initial snapshot-bound grant |
+| `POST /live-workspaces/{id}/decisions/propose` | Store a proposed `DecisionMutation` without changing the graph |
+| `POST /live-workspaces/{id}/decisions/{decision_id}/approve` | Role-check and apply the pending change |
+| `DELETE /live-workspaces/{id}/decisions/pending` | Cancel only the pending proposal; leave the graph and initial authorization unchanged |
+| `POST /live-workspaces/{id}/grants/initial/verify` | Send the initial grant and original plan through the executor |
+| `PUT /live-workspaces/{id}/plan` | Store a user-supplied corrected `AgentPlan` |
+| `POST /live-workspaces/{id}/reauthorize` | Evaluate the corrected plan and retain its replacement grant |
+| `POST /live-workspaces/{id}/grants/replacement/verify` | Verify the replacement grant through the executor |
+
+The write-only action routes without fields accept `{}`. Status progresses through
+`imported`, `baseline-approved`, `authorized`, `change-proposed`, `change-applied`,
+`initial-grant-rejected`, `plan-updated`, `reauthorized`, and `complete`. Authority verdicts and
+executor results—not the agent service—determine whether a grant exists or can be applied.
+Proposal submission first verifies that `supersedes_id` names an existing workspace Decision and
+that the affected scopes are contained by it. A proposal that later fails authority approval
+remains inspectable and can be canceled before submitting a replacement.
+
+Plan correction is locked until the executor has specifically returned a non-applied
+`STALE_SNAPSHOT` result for the retained initial grant. `EXPIRED`, `INVALID_TOKEN`, and every other
+non-stale failure remain visible but do not advance the workspace, unlock Plan updates, or permit
+completion. Completion also requires a `VALID` replacement verification.
+
+Every view includes the graph version, baseline and latest approved mutation wording, current plan,
+token-free authorization metadata, invalidation report, executor verification codes, and ordered
+persistent history. After a service restart, the agent rebuilds a missing authority context from
+the original proposal, re-approves the baseline with the recorded role, and replays all approved
+mutations. Context-specific signing keys are deterministic, so retained grants can still be
+verified subject to their original expiry and snapshot binding.
+
+### Live Workspace authority contexts
+
+The authority service owns these service-facing routes:
+
+- `POST /live-workspaces/authority/contexts`
+- `GET|DELETE /live-workspaces/authority/contexts/{context_id}`
+- `POST /live-workspaces/authority/contexts/{context_id}/baseline/approve`
+- `POST /live-workspaces/authority/contexts/{context_id}/mutations/approve`
+- `POST /live-workspaces/authority/contexts/{context_id}/authorize`
+- `POST /live-workspaces/authority/contexts/{context_id}/grants/verify`
+
+Context creation accepts the explicit graph version, artifacts, edges, baseline Decision ID, and
+authority policy. Approval endpoints require the acting role to equal the Decision authority role
+and to be authorized for every scope. They also enforce confidence and exact requirement shape
+before any graph mutation. A proposal alone never changes the graph.
+The seed may contain exactly one Decision: the proposed baseline. Pre-approved or additional
+Decision artifacts are rejected. A missing supersession target produces a deterministic conflict,
+not an internal graph error.
+
 ## Executor Service — port 8003
 
 ### `POST /execute`
@@ -342,7 +424,8 @@ Calls the authority verifier. Returns:
 }
 ```
 
-Scenario requests also include `context_id`; the executor forwards verification to that isolated
+Scenario and Live Workspace requests also include `context_id`; Live Workspace calls additionally
+set `context_kind: "workspace"`. The executor forwards verification to the correct isolated
 authority context. A successful response uses `verification_code: "VALID"` and may include a
 simulated PR URL.
 

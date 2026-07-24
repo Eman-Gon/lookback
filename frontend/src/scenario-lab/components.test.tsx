@@ -10,6 +10,7 @@ import { OutcomeLedger } from "./components/OutcomeLedger";
 import { ResultRows } from "./components/ResultRows";
 import { RunReport } from "./components/RunReport";
 import { ScenarioRunView } from "./components/ScenarioRunView";
+import { AppShell } from "./components/AppShell";
 
 const scenario: ScenarioDefinition = {
   id: "csv-exports-admin-only",
@@ -158,6 +159,21 @@ const summary: ScenarioRunSummary = {
 };
 
 describe("Scenario Lab executive story components", () => {
+  it("keeps Scenario Lab active while exposing the separate Live Workspace route", () => {
+    const html = renderToStaticMarkup(
+      <AppShell activeView="catalog" onNavigate={() => undefined}>
+        <p>Catalog</p>
+      </AppShell>,
+    );
+    expect(html).toContain('href="/live-workspace"');
+    expect(html).toContain(
+      'class="sl-nav-link" aria-current="page">Scenario Lab',
+    );
+    expect(html).not.toContain(
+      'href="/live-workspace" aria-current="page"',
+    );
+  });
+
   it("renders an immediate backend-backed outcome ledger", () => {
     const html = renderToStaticMarkup(
       <OutcomeLedger scenario={scenario} run={run} />,

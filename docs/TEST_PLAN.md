@@ -122,6 +122,38 @@ python -m pytest \
   backend/tests/test_scenario_service_flow.py
 ```
 
+### Live Workspace practical path
+
+`backend/tests/test_live_workspaces.py` verifies:
+
+- friendly imports construct a typed path through a persisted AgentPlan artifact;
+- each baseline requirement remains continuously scoped through Specification, Ticket, Task, Plan,
+  and canonical typed edges;
+- non-object requirements, unauthorized baseline roles, mismatched Plan attributes, invalid
+  `task_id` references, decorative graphs, and injected extra Decisions are rejected;
+- the JSON repository creates parent directories, writes atomically, and reloads typed state;
+- unapproved baselines cannot request authorization;
+- an unauthorized acting role cannot approve the baseline or advance the graph;
+- initial authorization is a real `ALLOW` grant bound to the imported graph snapshot;
+- a stored proposal has no graph effect until approval;
+- an approved change preserves the out-of-scope sibling, invalidates the conflicting Task, and
+  returns the exact multi-hop path to the active plan;
+- the executor rejects the retained initial grant with `STALE_SNAPSHOT`;
+- Plan updates and completion require that exact stale proof; `EXPIRED` and other grant failures
+  cannot advance the workflow;
+- missing supersession targets fail before persistence and at the authority boundary;
+- rejected pending proposals can be canceled and replaced without graph mutation;
+- a user-supplied corrected plan obtains and executes a `VALID` replacement grant;
+- public import, detail, list, and action responses contain no signed token; and
+- a new agent and authority runtime rehydrate `graph-v18` by replaying persisted approvals; and
+- an existing context with mismatched immutable lineage is discarded and rebuilt before mutation.
+
+Run it with:
+
+```bash
+python -m pytest -q backend/tests/test_live_workspaces.py
+```
+
 ## Optional Neo4j parity tests
 
 Run the same fixture and expected invalidation report against memory and Neo4j stores. Compare artifact validity, affected scopes, paths, graph version, and verdict.

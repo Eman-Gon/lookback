@@ -71,6 +71,41 @@ contain only grant payload metadata.
 Run All is serialized and keeps only the latest summary per scenario plus a bounded set of detailed
 runs. This history is process-local and session-only: restarting the agent service clears it.
 
+## Live Workspace
+
+Live Workspace is the practical, user-owned path. Import a YAML or JSON document containing your
+approved-decision proposal, specification, ticket, tasks, plan, scopes, and authority roles.
+Dragback persists the workspace, constructs and validates its provenance graph, and then walks you
+through the real enforcement lifecycle:
+
+```text
+import → approve baseline → authorize plan → approve change
+       → reject stale grant → correct plan → verify replacement grant
+```
+
+The authority and executor boundaries are unchanged: the browser and CLI cannot mint a verdict,
+approve their own proposal, or verify a signed grant locally. Public responses expose grant
+metadata and verification codes but never the signed token.
+
+Start the stack and open:
+
+```text
+http://127.0.0.1:5173/live-workspace
+```
+
+Use the built-in refund example, choose your own `.yaml`, `.yml`, or `.json` file, or run the same
+flow from the terminal:
+
+```bash
+dragback workspace import examples/dragback-workspace.yaml
+dragback workspace approve-baseline refund-operations --role finance-admin
+dragback workspace authorize refund-operations
+```
+
+The complete CLI flow, exit-code contract, and reusable GitHub Action are documented in
+[`docs/LIVE_WORKSPACE_CLI.md`](docs/LIVE_WORKSPACE_CLI.md). Persistent state defaults to
+`.dragback/live-workspaces.json`; change it with `DRAGBACK_WORKSPACE_STORE`.
+
 ## Fastest start
 
 Requires Python 3.11+.
@@ -103,6 +138,7 @@ Browser routes:
 
 - `http://127.0.0.1:5173/` — canonical guided proof;
 - `http://127.0.0.1:5173/scenario-lab` — Scenario Lab catalog;
+- `http://127.0.0.1:5173/live-workspace` — import and enforce user-owned work;
 - `http://127.0.0.1:5173/scenario-lab?demo=1` — presenter entry for the CSV scenario;
 - `http://127.0.0.1:5173/scenario-lab?scenario=api-read-only` — open a named scenario.
 

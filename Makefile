@@ -1,6 +1,6 @@
 PYTHON ?= python3
 
-.PHONY: install demo test check authority agent executor frontend stack neo4j
+.PHONY: install demo test check authority agent executor frontend stack neo4j cli
 
 install:
 	$(PYTHON) -m pip install -e ".[dev]"
@@ -37,3 +37,6 @@ stack:
 
 neo4j:
 	docker compose up neo4j
+
+cli:
+	PYTHONPATH=backend $(PYTHON) -m dragback.cli --help
