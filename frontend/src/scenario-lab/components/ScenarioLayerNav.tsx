@@ -1,12 +1,14 @@
-export type ScenarioDetailLayer = "story" | "evidence";
+export type ScenarioDetailLayer = "story" | "graph" | "evidence";
 
 export const SCENARIO_LAYER_CONTROL_IDS = {
   story: "scenario-story-control",
+  graph: "scenario-graph-control",
   evidence: "scenario-evidence-control",
 } as const;
 
 export const SCENARIO_LAYER_PANEL_IDS = {
   story: "scenario-story-panel",
+  graph: "scenario-graph-panel",
   evidence: "scenario-evidence-panel",
 } as const;
 
@@ -21,7 +23,7 @@ export function ScenarioLayerNav({
 }) {
   return (
     <nav className="sl-layer-nav" aria-label="Scenario detail">
-      {(["story", "evidence"] as const).map((layer) => (
+      {(["story", "graph"] as const).map((layer) => (
         <button
           type="button"
           key={layer}
@@ -31,7 +33,7 @@ export function ScenarioLayerNav({
           onClick={() => onChange(layer)}
           disabled={disabled}
         >
-          {layer === "story" ? "Story" : "Evidence"}
+          {layer === "story" ? "Guided story" : "Impact map"}
         </button>
       ))}
     </nav>

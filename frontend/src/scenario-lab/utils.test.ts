@@ -1,8 +1,14 @@
 import { describe, expect, it } from "vitest";
-import type { ScenarioDefinition, ScenarioRunSummary } from "./model";
+import type {
+  ScenarioDefinition,
+  ScenarioRunState,
+  ScenarioRunSummary,
+} from "./model";
 import {
   DEFAULT_SCENARIO_FILTERS,
   filterScenarios,
+  narrativeProgress,
+  narrativeStepForRun,
   stageProgress,
   summarizeRuns,
 } from "./utils";
@@ -98,6 +104,18 @@ function run(
 }
 
 describe("Scenario Lab utilities", () => {
+  const narrativeRun: ScenarioRunState = {
+    runId: "RUN-1",
+    scenarioId: "scenario",
+    status: "running",
+    activeStage: "authorized",
+    graphSnapshot: "graph-v17",
+    provenancePath: { nodes: [], edges: [] },
+    outcomes: [],
+    evidence: [],
+    events: [],
+  };
+
   it("filters without mutating the input collection", () => {
     const scenarios = [
       scenario("compliance", "compliance", "high", "passed"),
@@ -159,6 +177,50 @@ describe("Scenario Lab utilities", () => {
       "failed",
     );
     expect(stageProgress("work-stopped", "reauthorized", "failed")).toBe(
+      "complete",
+    );
+  });
+
+  it("maps real backend stages onto the five-step narrative", () => {
+    expect(narrativeStepForRun(null)).toBe("before");
+    expect(narrativeStepForRun(narrativeRun)).toBe("before");
+    expect(
+      narrativeStepForRun({
+        ...narrativeRun,
+        activeStage: "decision-changed",
+      }),
+    ).toBe("decision");
+    expect(
+      narrativeStepForRun(
+        { ...narrativeRun, activeStage: "decision-changed" },
+        true,
+      ),
+    ).toBe("impact");
+    expect(
+      narrativeStepForRun({
+        ...narrativeRun,
+        activeStage: "work-stopped",
+      }),
+    ).toBe("stopped");
+    expect(
+      narrativeStepForRun({
+        ...narrativeRun,
+        activeStage: "reauthorized",
+      }),
+    ).toBe("corrected");
+  });
+
+  it("derives five-step narrative progress without changing backend status", () => {
+    expect(narrativeProgress("before", "before", "not-run")).toBe(
+      "current",
+    );
+    expect(narrativeProgress("decision", "before", "not-run")).toBe(
+      "upcoming",
+    );
+    expect(narrativeProgress("before", "impact")).toBe("complete");
+    expect(narrativeProgress("impact", "impact")).toBe("current");
+    expect(narrativeProgress("stopped", "impact")).toBe("upcoming");
+    expect(narrativeProgress("corrected", "corrected", "passed")).toBe(
       "complete",
     );
   });

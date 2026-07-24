@@ -667,6 +667,22 @@ describe("Scenario Lab API client", () => {
     expect(statusById.get("PLAN-002")).toBe("reauthorized");
     expect(statusById.get("GRANT-NEW")).toBe("reauthorized");
     expect(
+      state.provenancePath.nodes.find((node) => node.id === "TASK-001"),
+    ).toMatchObject({
+      scopes: ["export"],
+      invalidatedScopes: ["export"],
+    });
+    expect(
+      state.provenancePath.edges.find(
+        (edge) =>
+          edge.sourceId === "TICKET-001" &&
+          edge.targetId === "TASK-001",
+      ),
+    ).toMatchObject({
+      scopes: ["export"],
+      evidenceRef: "fixture://task-stop",
+    });
+    expect(
       state.provenancePath.edges.some(
         (edge) =>
           edge.sourceId === "PLAN-002" &&

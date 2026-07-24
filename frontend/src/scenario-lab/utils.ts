@@ -1,7 +1,9 @@
 import type {
   ScenarioDefinition,
   ScenarioFiltersValue,
+  ScenarioNarrativeStepId,
   ScenarioResultStatus,
+  ScenarioRunState,
   ScenarioRunSummary,
   ScenarioStageId,
   StageProgress,
@@ -41,7 +43,21 @@ export const SCENARIO_STAGES: readonly {
   },
 ];
 
+export const SCENARIO_NARRATIVE_STEPS: readonly {
+  id: ScenarioNarrativeStepId;
+  label: string;
+}[] = [
+  { id: "before", label: "Before" },
+  { id: "decision", label: "Decision approved" },
+  { id: "impact", label: "Impact found" },
+  { id: "stopped", label: "Work stopped" },
+  { id: "corrected", label: "Corrected" },
+];
+
 const STAGE_ORDER = SCENARIO_STAGES.map((stage) => stage.id);
+const NARRATIVE_STEP_ORDER = SCENARIO_NARRATIVE_STEPS.map(
+  (step) => step.id,
+);
 
 export function stageProgress(
   stageId: ScenarioStageId,
@@ -53,6 +69,37 @@ export function stageProgress(
   if (runStatus === "not-run") return "upcoming";
   if (stageIndex < activeIndex) return "complete";
   if (stageIndex === activeIndex) {
+    if (runStatus === "passed") return "complete";
+    if (runStatus === "failed") return "failed";
+    return "current";
+  }
+  return "upcoming";
+}
+
+export function narrativeStepForRun(
+  run: ScenarioRunState | null,
+  impactRevealed = false,
+): ScenarioNarrativeStepId {
+  if (!run || run.activeStage === "authorized") return "before";
+  if (run.activeStage === "decision-changed") {
+    return impactRevealed ? "impact" : "decision";
+  }
+  if (run.activeStage === "work-stopped") return "stopped";
+  return "corrected";
+}
+
+export function narrativeProgress(
+  stepId: ScenarioNarrativeStepId,
+  activeStep: ScenarioNarrativeStepId,
+  runStatus: ScenarioResultStatus = "running",
+): StageProgress {
+  const stepIndex = NARRATIVE_STEP_ORDER.indexOf(stepId);
+  const activeIndex = NARRATIVE_STEP_ORDER.indexOf(activeStep);
+  if (runStatus === "not-run") {
+    return stepId === "before" ? "current" : "upcoming";
+  }
+  if (stepIndex < activeIndex) return "complete";
+  if (stepIndex === activeIndex) {
     if (runStatus === "passed") return "complete";
     if (runStatus === "failed") return "failed";
     return "current";

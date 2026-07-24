@@ -113,11 +113,6 @@ export function ScenarioLabRoute() {
             (await client.loadRunState(requestedRun, initialScenarioId, {
               signal: controller.signal,
             })) ?? undefined;
-        } else if (initialScenarioId && client.loadScenarioState) {
-          initialRun =
-            (await client.loadScenarioState(initialScenarioId, {
-              signal: controller.signal,
-            })) ?? undefined;
         }
         controller.signal.throwIfAborted();
         const servicesOnline = Object.values(health).filter(Boolean).length;
@@ -140,7 +135,11 @@ export function ScenarioLabRoute() {
               ? "report"
               : "catalog",
           initialDetailLayer:
-            requestedLayer === "evidence" ? "evidence" : "story",
+            requestedLayer === "evidence"
+              ? "evidence"
+              : requestedLayer === "graph"
+                ? "graph"
+                : "story",
         });
       } catch (caught) {
         if (controller.signal.aborted) return;

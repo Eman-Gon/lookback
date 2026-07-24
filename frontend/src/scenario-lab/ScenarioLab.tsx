@@ -3,10 +3,14 @@ import type {
   ScenarioFiltersValue,
   ScenarioLabClient,
   ScenarioLabData,
+  ScenarioNarrativeStepId,
   ScenarioRunState,
   ScenarioRunSummary,
 } from "./model";
-import { DEFAULT_SCENARIO_FILTERS } from "./utils";
+import {
+  DEFAULT_SCENARIO_FILTERS,
+  narrativeStepForRun,
+} from "./utils";
 import {
   AppShell,
   type AppShellAction,
@@ -19,8 +23,6 @@ import { ScenarioCatalog } from "./components/ScenarioCatalog";
 import type { ScenarioDetailLayer } from "./components/ScenarioLayerNav";
 import { ScenarioRunView } from "./components/ScenarioRunView";
 import "./scenario-lab.css";
-
-const AUTOMATIC_STEP_DELAY_MS = 900;
 
 export interface ScenarioLabProps {
   data: ScenarioLabData;
@@ -52,8 +54,9 @@ function scenarioLabUrl({
     url.searchParams.delete("view");
     if (runId) url.searchParams.set("run", runId);
     else url.searchParams.delete("run");
-    if (detailLayer === "evidence") url.searchParams.set("layer", "evidence");
-    else url.searchParams.delete("layer");
+    if (detailLayer === "evidence" || detailLayer === "graph") {
+      url.searchParams.set("layer", detailLayer);
+    } else url.searchParams.delete("layer");
     return url;
   }
   url.searchParams.delete("scenario");
@@ -97,9 +100,14 @@ export function ScenarioLab({
   const [evidenceOpen, setEvidenceOpen] = useState(false);
   const [detailLayer, setDetailLayer] =
     useState<ScenarioDetailLayer>(initialDetailLayer);
+  const [evidenceReturnLayer, setEvidenceReturnLayer] = useState<
+    "story" | "graph"
+  >("story");
   const [evidenceSection, setEvidenceSection] =
     useState<EvidenceSection>(null);
-  const [autoRun, setAutoRun] = useState(false);
+  const [impactRevealed, setImpactRevealed] = useState(
+    initialRun?.activeStage === "decision-changed",
+  );
   const [runAllProgress, setRunAllProgress] = useState<{
     completed: number;
     total: number;
@@ -204,9 +212,8 @@ export function ScenarioLab({
   }, []);
 
   const openScenario = useCallback(
-    async (scenarioId: string) => {
-      const controller = beginRequest();
-      if (!controller) return;
+    (scenarioId: string) => {
+      if (requestRef.current) return;
       pendingFocusIdRef.current = "scenario-run-title";
       pushRoute("run", scenarioId);
       setSelectedScenarioId(scenarioId);
@@ -215,30 +222,17 @@ export function ScenarioLab({
       setEvidenceOpen(false);
       setDetailLayer("story");
       setEvidenceSection(null);
-      setAutoRun(false);
+      setImpactRevealed(false);
       setView("run");
-      try {
-        const loaded = client.loadScenarioState
-          ? await client.loadScenarioState(scenarioId, {
-              signal: controller.signal,
-            })
-          : null;
-        if (!controller.signal.aborted) setRun(loaded);
-      } catch (caught) {
-        if (!controller.signal.aborted) setError(messageFromError(caught));
-      } finally {
-        finishRequest(controller);
-      }
     },
-    [beginRequest, client, finishRequest, pushRoute],
+    [pushRoute],
   );
 
   const startScenario = useCallback(async () => {
     if (!selectedScenario) return;
     const controller = beginRequest();
     if (!controller) return;
-    setAutoRun(false);
-    setDetailLayer("story");
+    setImpactRevealed(false);
     setEvidenceSection(null);
     try {
       const next = await client.startScenario(selectedScenario.id, {
@@ -247,7 +241,6 @@ export function ScenarioLab({
       if (!controller.signal.aborted) setRun(next);
     } catch (caught) {
       if (!controller.signal.aborted) {
-        setAutoRun(false);
         setError(messageFromError(caught));
       }
     } finally {
@@ -269,6 +262,7 @@ export function ScenarioLab({
       );
       if (!controller.signal.aborted) {
         setRun(next);
+        setImpactRevealed(false);
         setUnavailableRunIds((current) => {
           const updated = new Set(current);
           updated.delete(next.runId);
@@ -287,7 +281,6 @@ export function ScenarioLab({
       }
     } catch (caught) {
       if (!controller.signal.aborted) {
-        setAutoRun(false);
         setError(messageFromError(caught));
       }
     } finally {
@@ -295,31 +288,11 @@ export function ScenarioLab({
     }
   }, [beginRequest, client, finishRequest, run]);
 
-  useEffect(() => {
-    if (
-      !autoRun ||
-      busy ||
-      view !== "run" ||
-      !run ||
-      run.status !== "running"
-    ) {
-      return;
-    }
-    const timer = window.setTimeout(() => {
-      void advanceScenario();
-    }, AUTOMATIC_STEP_DELAY_MS);
-    return () => window.clearTimeout(timer);
-  }, [advanceScenario, autoRun, busy, run, view]);
-
-  useEffect(() => {
-    if (run && run.status !== "running") setAutoRun(false);
-  }, [run]);
-
   const resetScenario = useCallback(async () => {
     if (!selectedScenario) return;
     const controller = beginRequest();
     if (!controller) return;
-    setAutoRun(false);
+    setImpactRevealed(false);
     try {
       const next = await client.resetScenario(selectedScenario.id, {
         signal: controller.signal,
@@ -327,32 +300,8 @@ export function ScenarioLab({
       if (!controller.signal.aborted) {
         setRun(next);
         setEvidenceOpen(false);
-        setDetailLayer("story");
         setEvidenceSection(null);
       }
-    } catch (caught) {
-      if (!controller.signal.aborted) setError(messageFromError(caught));
-    } finally {
-      finishRequest(controller);
-    }
-  }, [beginRequest, client, finishRequest, selectedScenario]);
-
-  const restartScenario = useCallback(async () => {
-    if (!selectedScenario) return;
-    const controller = beginRequest();
-    if (!controller) return;
-    setAutoRun(false);
-    setDetailLayer("story");
-    setEvidenceSection(null);
-    try {
-      await client.resetScenario(selectedScenario.id, {
-        signal: controller.signal,
-      });
-      controller.signal.throwIfAborted();
-      const next = await client.startScenario(selectedScenario.id, {
-        signal: controller.signal,
-      });
-      if (!controller.signal.aborted) setRun(next);
     } catch (caught) {
       if (!controller.signal.aborted) setError(messageFromError(caught));
     } finally {
@@ -363,7 +312,7 @@ export function ScenarioLab({
   const runAll = useCallback(async () => {
     const controller = beginRequest();
     if (!controller) return;
-    setAutoRun(false);
+    setImpactRevealed(false);
     setRunAllProgress(null);
     setRuns([]);
     setUnavailableRunIds(new Set());
@@ -403,7 +352,6 @@ export function ScenarioLab({
       }
       const controller = beginRequest();
       if (!controller) return;
-      setAutoRun(false);
       try {
         const loaded = await client.loadRunState(runId, scenarioId, {
           signal: controller.signal,
@@ -420,6 +368,7 @@ export function ScenarioLab({
         setEvidenceOpen(false);
         setDetailLayer("story");
         setEvidenceSection(null);
+        setImpactRevealed(loaded.activeStage === "decision-changed");
         pendingFocusIdRef.current = "scenario-run-title";
         pushRoute("run", scenarioId, runId);
         setView("run");
@@ -432,34 +381,53 @@ export function ScenarioLab({
     [beginRequest, client, finishRequest, pushRoute],
   );
 
+  const narrativeStep = useMemo<ScenarioNarrativeStepId>(
+    () => narrativeStepForRun(run, impactRevealed),
+    [impactRevealed, run],
+  );
+
   const primaryAction = useMemo<AppShellAction | undefined>(() => {
     if (view !== "run" || !selectedScenario) return undefined;
     if (!run) {
       return {
-        label: "Start guided run",
+        label: "Start with authorized work",
         onClick: startScenario,
         disabled: busy,
         busy,
       };
     }
     if (run.status === "running") {
+      if (run.activeStage === "decision-changed" && !impactRevealed) {
+        return {
+          label: "Show affected work",
+          onClick: () => setImpactRevealed(true),
+          disabled: busy,
+          busy: false,
+        };
+      }
       return {
-        label: "Next demo step",
+        label:
+          run.activeStage === "authorized"
+            ? "Approve the change"
+            : run.activeStage === "decision-changed"
+              ? "Check old authorization"
+              : "Correct the plan",
         onClick: advanceScenario,
         disabled: busy,
         busy,
       };
     }
     return {
-      label: "Run again",
-      onClick: restartScenario,
+      label: "Start over",
+      onClick: resetScenario,
       disabled: busy,
       busy,
     };
   }, [
     advanceScenario,
     busy,
-    restartScenario,
+    impactRevealed,
+    resetScenario,
     run,
     selectedScenario,
     startScenario,
@@ -478,7 +446,7 @@ export function ScenarioLab({
       setEvidenceOpen(false);
       setDetailLayer("story");
       setEvidenceSection(null);
-      setAutoRun(false);
+      setImpactRevealed(false);
       setView(next);
     },
     [pushRoute, view],
@@ -524,6 +492,7 @@ export function ScenarioLab({
         <ScenarioRunView
           scenario={selectedScenario}
           run={run}
+          narrativeStep={narrativeStep}
           busy={busy}
           onBack={() => navigate(runReturnView)}
           backLabel={
@@ -532,26 +501,20 @@ export function ScenarioLab({
           onReset={resetScenario}
           onOpenEvidence={() => setEvidenceOpen(true)}
           detailLayer={detailLayer}
+          evidenceReturnLayer={evidenceReturnLayer}
           evidenceSection={evidenceSection}
           onDetailLayerChange={(layer) => {
+            if (layer === "evidence" && detailLayer !== "evidence") {
+              setEvidenceReturnLayer(
+                detailLayer === "graph" ? "graph" : "story",
+              );
+            }
             if (layer !== detailLayer) {
               pushRoute("run", selectedScenario.id, run?.runId, layer);
             }
             setDetailLayer(layer);
             if (layer === "story") setEvidenceSection(null);
           }}
-          onShowEvidence={(section) => {
-            pushRoute(
-              "run",
-              selectedScenario.id,
-              run?.runId,
-              "evidence",
-            );
-            setEvidenceSection(section);
-            setDetailLayer("evidence");
-          }}
-          autoRun={autoRun}
-          onToggleAutoRun={() => setAutoRun((current) => !current)}
           primaryAction={primaryAction}
         />
       ) : null}

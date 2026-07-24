@@ -24,6 +24,13 @@ export type ScenarioStageId =
 
 export type StageProgress = "complete" | "current" | "upcoming" | "failed";
 
+export type ScenarioNarrativeStepId =
+  | "before"
+  | "decision"
+  | "impact"
+  | "stopped"
+  | "corrected";
+
 export type OutcomeKind = "preserved" | "stopped" | "newly-required";
 
 export type PlanValidity = "VALID" | "NEEDS_REVIEW" | "INVALIDATED";
@@ -139,6 +146,8 @@ export interface ProvenanceNode {
   kind: string;
   title: string;
   status: ProvenanceNodeStatus;
+  scopes?: readonly string[];
+  invalidatedScopes?: readonly string[];
   synthetic?: boolean;
 }
 
@@ -146,6 +155,7 @@ export interface ProvenanceEdge {
   sourceId: string;
   targetId: string;
   relation: string;
+  scopes?: readonly string[];
   evidenceRef?: string;
   synthetic?: boolean;
 }

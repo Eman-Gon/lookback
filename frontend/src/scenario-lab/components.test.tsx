@@ -6,11 +6,13 @@ import type {
   ScenarioRunSummary,
 } from "./model";
 import { FourStageRail } from "./components/FourStageRail";
+import { ScenarioNarrativeRail } from "./components/ScenarioNarrativeRail";
 import { OutcomeLedger } from "./components/OutcomeLedger";
 import { ResultRows } from "./components/ResultRows";
 import { RunReport } from "./components/RunReport";
 import { ScenarioRunView } from "./components/ScenarioRunView";
 import { AppShell } from "./components/AppShell";
+import { KnowledgeGraphView } from "./components/KnowledgeGraphView";
 
 const scenario: ScenarioDefinition = {
   id: "csv-exports-admin-only",
@@ -62,8 +64,39 @@ const run: ScenarioRunState = {
   graphSnapshot: "graph-v18",
   agentLoopState: "COMPLETE",
   provenancePath: {
-    nodes: [],
-    edges: [],
+    nodes: [
+      {
+        id: "DEC-018",
+        kind: "decision",
+        title: "Admin-only exports",
+        status: "changed",
+      },
+      {
+        id: "SPEC-009",
+        kind: "specification",
+        title: "CSV export",
+        status: "needs-review",
+      },
+      {
+        id: "TICKET-100",
+        kind: "ticket",
+        title: "Implement CSV export",
+        status: "needs-review",
+      },
+      {
+        id: "TASK-104",
+        kind: "task",
+        title: "Display exports to standard users",
+        status: "stopped",
+      },
+    ],
+    edges: [
+      {
+        sourceId: "DEC-018",
+        targetId: "SPEC-009",
+        relation: "GOVERNS",
+      },
+    ],
   },
   outcomes: [
     {
@@ -107,6 +140,16 @@ const run: ScenarioRunState = {
     status: "applied",
     verificationCode: "VALID",
   },
+  originalPlan: {
+    ...scenario.initialPlan,
+  },
+  correctedPlan: {
+    id: "PLAN-028",
+    objective: "Ship CSV export for administrators",
+    steps: ["Generate CSV files", "Require administrator access"],
+    scope: ["exports.csv"],
+    source: "fixture",
+  },
   outcomeSummary: {
     preservedTaskIds: ["TASK-101", "TASK-102", "TASK-103"],
     invalidatedTaskIds: ["TASK-104", "TASK-105"],
@@ -122,7 +165,64 @@ const run: ScenarioRunState = {
     historyScope: "session",
   },
   evidence: [],
-  events: [],
+  events: [
+    {
+      sequence: 1,
+      stage: "authorized",
+      eventType: "authorization.issued",
+      label: "Original authorization issued",
+      detail: "Bound to the original graph.",
+      createdAt: "2026-07-23T19:41:02-07:00",
+    },
+    {
+      sequence: 2,
+      stage: "authorized",
+      eventType: "agent.work.started",
+      label: "Agent begins work",
+      detail: "The plan is active.",
+      createdAt: "2026-07-23T19:41:03-07:00",
+    },
+    {
+      sequence: 3,
+      stage: "decision-changed",
+      eventType: "decision.received",
+      label: "New decision received",
+      detail: "Admin-only exports.",
+      createdAt: "2026-07-23T19:42:10-07:00",
+    },
+    {
+      sequence: 4,
+      stage: "decision-changed",
+      eventType: "graph.impact.identified",
+      label: "Impacted nodes identified",
+      detail: "Related work was found.",
+      createdAt: "2026-07-23T19:42:11-07:00",
+    },
+    {
+      sequence: 5,
+      stage: "decision-changed",
+      eventType: "graph.work.invalidated",
+      label: "Conflicting work invalidated",
+      detail: "One task stopped.",
+      createdAt: "2026-07-23T19:42:12-07:00",
+    },
+    {
+      sequence: 6,
+      stage: "work-stopped",
+      eventType: "executor.rejected",
+      label: "Executor rejects old grant",
+      detail: "The authorization is stale.",
+      createdAt: "2026-07-23T19:42:13-07:00",
+    },
+    {
+      sequence: 7,
+      stage: "reauthorized",
+      eventType: "executor.resumed",
+      label: "Execution resumes",
+      detail: "The corrected plan may continue.",
+      createdAt: "2026-07-23T19:42:14-07:00",
+    },
+  ],
 };
 
 const summary: ScenarioRunSummary = {
@@ -288,29 +388,142 @@ describe("Scenario Lab executive story components", () => {
     expect(html.match(/sl-stage--upcoming/g)).toHaveLength(4);
   });
 
-  it("keeps a concise stage live region and stable layer relationships", () => {
+  it("renders five plain-language narrative steps", () => {
+    const html = renderToStaticMarkup(
+      <ScenarioNarrativeRail
+        activeStep="impact"
+        runStatus="running"
+      />,
+    );
+    expect(html.match(/class="sl-narrative-step /g)).toHaveLength(5);
+    expect(html).toContain(">Before<");
+    expect(html).toContain(">Decision approved<");
+    expect(html).toContain(">Impact found<");
+    expect(html).toContain(">Work stopped<");
+    expect(html).toContain(">Corrected<");
+    expect(html).toContain('aria-current="step"');
+  });
+
+  it("shows only the active impact narrative with human-readable service updates", () => {
     const html = renderToStaticMarkup(
       <ScenarioRunView
         scenario={scenario}
-        run={run}
+        run={{ ...run, status: "running", activeStage: "decision-changed" }}
+        narrativeStep="impact"
         onBack={() => undefined}
         onReset={() => undefined}
         onOpenEvidence={() => undefined}
         onDetailLayerChange={() => undefined}
-        onShowEvidence={() => undefined}
+        primaryAction={{
+          label: "Check old authorization",
+          onClick: () => undefined,
+        }}
       />,
     );
-    expect(html).toContain(
-      "Stage 4 of 4: Re-authorized. Scenario complete.",
-    );
-    expect(html).toContain('id="scenario-story-control"');
-    expect(html).toContain('aria-controls="scenario-story-panel"');
-    expect(html).toContain('id="scenario-story-panel"');
-    expect(html).toContain('aria-controls="scenario-evidence-graph"');
-    expect(html).toContain('aria-controls="scenario-evidence-timeline"');
+    expect(html).toContain("Step 3 of 5");
+    expect(html).toContain("Dragback found the affected work");
+    expect(html).toContain("How Dragback found the work");
+    expect(html).toContain("Affected work discovered");
+    expect(html).toContain("Check old authorization");
+    expect(html).toContain("Open technical evidence");
+    expect(html).not.toContain("Corrected work may continue");
+    expect(html).not.toContain("executor.rejected");
+    expect(html).not.toContain("Next demo step");
+    expect(html).not.toContain("Run remaining steps");
   });
 
-  it("gives requested evidence disclosures stable focus targets", () => {
+  it("renders a state-aware impact map from backend-returned graph data", () => {
+    const html = renderToStaticMarkup(
+      <KnowledgeGraphView
+        scenario={scenario}
+        run={run}
+        activeStep="impact"
+        onOpenTechnicalEvidence={() => undefined}
+        primaryAction={{
+          label: "Check old authorization",
+          onClick: () => undefined,
+        }}
+      />,
+    );
+    expect(html).toContain("Decision knowledge graph");
+    expect(html).toContain("graph-v17 → graph-v18");
+    expect(html).toContain("View technical proof");
+    expect(html).toContain("Check old authorization");
+    expect(html).toContain("sl-knowledge-node--stopped");
+    expect(html).toContain('aria-pressed="true"');
+    expect(html).toContain(
+      "Scenario Lab uses an isolated in-memory graph",
+    );
+    expect(html).toContain("supports Neo4j for persistent deployments");
+    expect(html).not.toContain("Neo4j connected");
+  });
+
+  it("keeps impact hidden until the audience reveals it", () => {
+    const html = renderToStaticMarkup(
+      <KnowledgeGraphView
+        scenario={scenario}
+        run={{ ...run, status: "running", activeStage: "decision-changed" }}
+        activeStep="decision"
+        onOpenTechnicalEvidence={() => undefined}
+      />,
+    );
+    expect(html).toContain("Approved change");
+    expect(html).not.toContain("sl-knowledge-node--stopped");
+    expect(html).not.toContain("sl-knowledge-node--needs-review");
+  });
+
+  it("shows the completed before-and-after result without repeating evidence controls", () => {
+    const html = renderToStaticMarkup(
+      <ScenarioRunView
+        scenario={scenario}
+        run={run}
+        narrativeStep="corrected"
+        onBack={() => undefined}
+        onReset={() => undefined}
+        onOpenEvidence={() => undefined}
+        onDetailLayerChange={() => undefined}
+        primaryAction={{
+          label: "Start over",
+          onClick: () => undefined,
+        }}
+      />,
+    );
+    expect(html).toContain("Step 5 of 5");
+    expect(html).toContain("Corrected work may continue");
+    expect(html).toContain("Fresh authorization accepted");
+    expect(html).toContain("Start over");
+    expect(html).toContain("Original plan authorized");
+    expect(html).toContain("Corrected work may continue");
+    expect(html).not.toContain("View complete graph");
+    expect(html).not.toContain("Show 7-event timeline");
+    expect(html).not.toContain("View Evidence");
+  });
+
+  it("offers Guided story and Impact map as the two primary scenario views", () => {
+    const html = renderToStaticMarkup(
+      <ScenarioRunView
+        scenario={scenario}
+        run={run}
+        narrativeStep="impact"
+        detailLayer="graph"
+        onBack={() => undefined}
+        onReset={() => undefined}
+        onOpenEvidence={() => undefined}
+        onDetailLayerChange={() => undefined}
+        primaryAction={{
+          label: "Check old authorization",
+          onClick: () => undefined,
+        }}
+      />,
+    );
+    expect(html).toContain(">Guided story<");
+    expect(html).toContain(">Impact map<");
+    expect(html).toContain('aria-current="page">Impact map');
+    expect(html).toContain('id="scenario-graph-panel"');
+    expect(html).not.toContain(">Evidence</button>");
+  });
+
+  it("keeps technical evidence on one deliberate secondary surface", () => {
     const html = renderToStaticMarkup(
       <ScenarioRunView
         scenario={scenario}
@@ -323,11 +536,29 @@ describe("Scenario Lab executive story components", () => {
         onDetailLayerChange={() => undefined}
       />,
     );
-    expect(html).toContain('id="scenario-evidence-panel"');
+    expect(html).toContain("Back to guided story");
+    expect(html).toContain('id="technical-evidence-title"');
     expect(html).toContain('id="scenario-evidence-graph"');
     expect(html).toContain('id="scenario-evidence-timeline"');
     expect(html).toContain(
       'id="scenario-evidence-graph" class="sl-disclosure" open=""',
     );
+  });
+
+  it("returns technical proof to the Impact map when it was opened there", () => {
+    const html = renderToStaticMarkup(
+      <ScenarioRunView
+        scenario={scenario}
+        run={run}
+        detailLayer="evidence"
+        evidenceReturnLayer="graph"
+        onBack={() => undefined}
+        onReset={() => undefined}
+        onOpenEvidence={() => undefined}
+        onDetailLayerChange={() => undefined}
+      />,
+    );
+    expect(html).toContain("Back to impact map");
+    expect(html).not.toContain("Back to guided story");
   });
 });

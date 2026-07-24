@@ -96,10 +96,11 @@ export function EvidenceWorkspace({
     <section className="sl-evidence-workspace" aria-labelledby="evidence-view-title">
       <div className="sl-evidence-workspace__heading">
         <div>
-          <h2 id="evidence-view-title">Evidence view</h2>
+          <h2 id="evidence-view-title">Proof details</h2>
           <p>
-            Full graph, relationship, grant, timeline, and evaluation output
-            returned by the backend.
+            Backend-returned graph, authorization, event, and evaluation
+            records for this run. This is session evidence, not a permanent
+            evidence store.
           </p>
         </div>
         <span>Session-only history</span>
@@ -198,7 +199,7 @@ export function EvidenceWorkspace({
           type="button"
           onClick={onOpenDrawer}
         >
-          Open evidence drawer
+          Inspect raw verification metadata
         </button>
       </div>
       <p className="sl-run-note">

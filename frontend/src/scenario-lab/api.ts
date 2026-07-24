@@ -410,12 +410,15 @@ function buildProvenance(raw: RawRun, scenario: ScenarioDefinition) {
     kind: artifact.kind,
     title: artifact.title,
     status: nodeStatus(artifact, artifact.id, report),
+    scopes: [...artifact.scopes].sort(),
+    invalidatedScopes: [...artifact.invalidated_scopes].sort(),
   }));
   const nodeIds = new Set(nodes.map((node) => node.id));
   const edges: ProvenanceEdge[] = raw.edges.map((edge) => ({
     sourceId: edge.source_id,
     targetId: edge.target_id,
     relation: edge.kind,
+    scopes: [...(edge.scopes ?? [])].sort(),
     evidenceRef: edge.evidence_ref ?? undefined,
   }));
   const edgeKeys = new Set(
@@ -488,6 +491,7 @@ function buildProvenance(raw: RawRun, scenario: ScenarioDefinition) {
       kind: "AgentPlan",
       title: plan.objective,
       status,
+      scopes: uniqueScopes(plan),
       synthetic: true,
     });
     const hasIncoming = edges.some((edge) => edge.targetId === plan.id);
@@ -550,6 +554,7 @@ function buildProvenance(raw: RawRun, scenario: ScenarioDefinition) {
       kind: "Grant",
       title: `${grant.decision_snapshot} authorization for ${plan.id}`,
       status,
+      scopes: uniqueScopes(plan),
       synthetic: true,
     });
     addDisplayEdge(
