@@ -15,7 +15,8 @@ export type LiveWorkspaceStage =
   | "import"
   | "approve-baseline"
   | "authorize-plan"
-  | "verify-change";
+  | "apply-change"
+  | "verify-update";
 
 export type WorkspaceDocumentFormat = "yaml" | "json";
 

@@ -10,7 +10,13 @@ export function WorkspaceStageRail({
   status?: LiveWorkspaceStatus;
 }) {
   return (
-    <nav className="lw-stage-rail" aria-label="Live Workspace progress">
+    <section
+      className="lw-stage-rail"
+      aria-labelledby="workspace-progress-title"
+    >
+      <h2 className="sl-visually-hidden" id="workspace-progress-title">
+        Live Workspace progress
+      </h2>
       <ol>
         {WORKSPACE_STAGES.map((stage, index) => {
           const progress = workspaceStageProgress(stage.id, status);
@@ -35,12 +41,20 @@ export function WorkspaceStageRail({
               </span>
               <span className="lw-stage__copy">
                 <strong>{stage.label}</strong>
-                <span>{stage.description}</span>
+                <span className="sl-visually-hidden">
+                  {progress === "complete"
+                    ? "Completed"
+                    : progress === "attention"
+                      ? "Needs attention"
+                      : progress === "current"
+                        ? "Current step"
+                        : "Upcoming"}
+                </span>
               </span>
             </li>
           );
         })}
       </ol>
-    </nav>
+    </section>
   );
 }

@@ -6,7 +6,9 @@ import type { LiveWorkspaceClient } from "./model";
 import { WorkspaceImpact } from "./components/WorkspaceImpact";
 import { WorkspaceImportForm } from "./components/WorkspaceImportForm";
 import { WorkspaceChange } from "./components/WorkspaceChange";
-import { workspaceReadiness } from "./state";
+import { WorkspaceGuide } from "./components/WorkspaceGuide";
+import { WorkspaceActivity } from "./components/WorkspaceActivity";
+import { workspaceGuide, workspaceReadiness } from "./state";
 import { SAMPLE_WORKSPACE, SAMPLE_WORKSPACE_JSON } from "./sample";
 import { RAW_WORKSPACE } from "./test-fixtures";
 
@@ -26,15 +28,17 @@ describe("Live Workspace components", () => {
         onContentChange={() => undefined}
         onFile={() => undefined}
         onSubmit={() => undefined}
+        onDownloadTemplate={() => undefined}
         onDismissError={() => undefined}
       />,
     );
-    expect(html).toContain("Import workspace");
+    expect(html).toContain("Choose a workspace file");
     expect(html).toContain('accept=".yaml,.yml,.json');
-    expect(html).toContain("or paste JSON");
+    expect(html).toContain("Review or edit the workspace document");
     expect(html).toContain("What Dragback needs");
-    expect(html).toContain("Validate and import");
-    expect(html).toContain("server validation is next");
+    expect(html).toContain("Download starter JSON");
+    expect(html).toContain("Validate and continue");
+    expect(html).toContain("Server validation is next");
   });
 
   it("labels an uploaded YAML document as YAML while preserving the same form", () => {
@@ -50,23 +54,26 @@ describe("Live Workspace components", () => {
         onContentChange={() => undefined}
         onFile={() => undefined}
         onSubmit={() => undefined}
+        onDownloadTemplate={() => undefined}
         onDismissError={() => undefined}
       />,
     );
-    expect(html).toContain("or edit YAML");
-    expect(html).not.toContain("or paste JSON");
+    expect(html).toContain("Workspace YAML");
+    expect(html).not.toContain("Workspace JSON");
   });
 
   it("renders the full Live Workspace shell with active navigation and no invented report", () => {
     const html = renderToStaticMarkup(
       <LiveWorkspace client={client} servicesOnline={3} servicesTotal={3} />,
     );
-    expect(html).toContain("Bring your own work");
+    expect(html).toContain("Live Workspace");
     expect(html).toContain('href="/live-workspace" aria-current="page"');
     expect(html).toContain("Guided Proof");
     expect(html).toContain("Scenario Lab");
     expect(html).not.toContain("Run report");
-    expect(html).toContain("No workspace loaded");
+    expect(html).toContain("Step 1 of 5");
+    expect(html).toContain("What happens next");
+    expect(html).not.toContain("Example workflow");
   });
 
   it("renders backend-owned stale grant, selective tasks, actual decision wording, and token-free evidence", () => {
@@ -81,15 +88,19 @@ describe("Live Workspace components", () => {
         onSaveAndReauthorize={() => undefined}
         onReauthorize={() => undefined}
         onVerifyReplacement={() => undefined}
+        onDownloadReport={() => undefined}
         onToggleEvidence={() => undefined}
       />,
     );
-    expect(html).toContain("The original grant is stale.");
-    expect(html).toContain("1 task invalidated. 1 continue.");
+    expect(html).toContain("The original authorization is stale.");
+    expect(html).toContain("1 task stopped.");
+    expect(html).toContain("1 task remains valid.");
     expect(html).toContain("Refunds over $500 require human approval");
     expect(html).toContain("Rejected · STALE_SNAPSHOT");
     expect(html).toContain("Calculate amount");
     expect(html).toContain("Issue automatically");
+    expect(html).toContain("Preserved");
+    expect(html).toContain("Stopped");
     expect(html).toContain("DEC-002");
     expect(html).toContain("Grant signatures and raw tokens are intentionally not exposed.");
     expect(html).not.toContain("signed_token");
@@ -119,7 +130,63 @@ describe("Live Workspace components", () => {
         onVerify={() => undefined}
       />,
     );
-    expect(html).toContain("Cancel and edit proposal");
+    expect(html).toContain("Cancel proposal");
     expect(html).toContain("sl-button--quiet");
+  });
+
+  it("explains one current step and one next outcome without repeating all stage descriptions", () => {
+    const html = renderToStaticMarkup(
+      <WorkspaceGuide
+        guide={workspaceGuide("initial-grant-rejected")}
+        busy={false}
+      />,
+    );
+    expect(html).toContain("Step 5 of 5");
+    expect(html).toContain("Do this now");
+    expect(html).toContain("Update the affected plan");
+    expect(html).toContain("What happens next");
+    expect(html).toContain("Old authorization rejected");
+    expect(html).not.toContain("Bring in your decisions");
+  });
+
+  it("uses explicit wait language while a step is running", () => {
+    const guide = workspaceGuide("change-applied");
+    const guideHtml = renderToStaticMarkup(
+      <WorkspaceGuide guide={guide} busy />,
+    );
+    const activityHtml = renderToStaticMarkup(
+      <WorkspaceActivity
+        events={[]}
+        busy
+        busyMessage={guide.busyMessage}
+      />,
+    );
+    expect(guideHtml).toContain("Dragback is working");
+    expect(guideHtml).toContain("Please wait");
+    expect(guideHtml).toContain("Keep this page open");
+    expect(activityHtml).toContain("Working on this step");
+    expect(activityHtml).toContain("independent executor is checking");
+  });
+
+  it("maps known activity types to readable updates without inferring tone from free text", () => {
+    const html = renderToStaticMarkup(
+      <WorkspaceActivity
+        events={[
+          {
+            sequence: 1,
+            eventType: "initial-grant.verified",
+            detail: "Executor verification returned STALE_SNAPSHOT.",
+            createdAt: "2026-07-23T18:00:00Z",
+            data: { applied: false },
+          },
+        ]}
+        busy={false}
+        busyMessage="Checking"
+      />,
+    );
+    expect(html).toContain("Original authorization checked");
+    expect(html).toContain("Activity history (1)");
+    expect(html).toContain("lw-activity__current--negative");
+    expect(html).not.toContain("initial-grant verified");
   });
 });

@@ -10,14 +10,14 @@ export function WorkspaceAuthorization({
   onAuthorize: () => void;
 }) {
   return (
-    <div className="lw-action-layout">
-      <section aria-labelledby="plan-review-title">
+    <section className="lw-stage-content" aria-labelledby="plan-review-title">
+      <div className="lw-stage-content__main">
         <div className="lw-section-heading">
           <div>
-            <h2 id="plan-review-title">Review the current agent plan</h2>
+            <h2 id="plan-review-title">Check the plan to be authorized</h2>
             <p>
-              Dragback will evaluate every scoped action against the approved
-              graph snapshot.
+              Every action must match the approved baseline before the
+              authority can approve it.
             </p>
           </div>
           <code>{workspace.currentPlan.id}</code>
@@ -40,38 +40,31 @@ export function WorkspaceAuthorization({
             ))}
           </ol>
         </div>
-      </section>
+      </div>
 
-      <aside className="lw-action-panel" aria-labelledby="authorize-action-title">
-        <h2 id="authorize-action-title">Authorize plan</h2>
-        <p>
-          A successful authorization binds the run, ticket, graph snapshot, and
-          exact plan hash.
-        </p>
-        <dl>
-          <div>
-            <dt>Approved snapshot</dt>
-            <dd>{workspace.graphVersion}</dd>
-          </div>
-          <div>
-            <dt>Ticket</dt>
-            <dd>{workspace.currentPlan.ticketId}</dd>
-          </div>
-          <div>
-            <dt>Plan actions</dt>
-            <dd>{workspace.currentPlan.actions.length}</dd>
-          </div>
-        </dl>
-        <button
-          className="sl-button sl-button--primary"
-          type="button"
-          disabled={busy}
-          onClick={onAuthorize}
-        >
-          {busy ? "Authorizing…" : "Issue snapshot-bound authorization"}
-        </button>
-        <small>The browser never mints or signs a grant.</small>
-      </aside>
-    </div>
+      <div className="lw-action-panel" aria-labelledby="authorize-action-title">
+        <div>
+          <h3 id="authorize-action-title">Request authorization</h3>
+          <p>
+            The result will be bound to {workspace.graphVersion}, ticket{" "}
+            {workspace.currentPlan.ticketId}, and the exact plan hash.
+          </p>
+        </div>
+        <div className="lw-action-panel__controls">
+          <button
+            className="sl-button sl-button--primary"
+            type="button"
+            disabled={busy}
+            onClick={onAuthorize}
+          >
+            {busy ? "Authorizing plan…" : "Authorize this plan"}
+          </button>
+        </div>
+      </div>
+      <p className="lw-stage-note">
+        The browser cannot approve its own plan. The authority service owns
+        that decision.
+      </p>
+    </section>
   );
 }

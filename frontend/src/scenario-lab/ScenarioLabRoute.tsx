@@ -2,7 +2,10 @@ import { useCallback, useEffect, useState } from "react";
 import { api } from "../api";
 import { ScenarioLab } from "./ScenarioLab";
 import { createScenarioLabClient, loadScenarioCatalog } from "./api";
-import type { ScenarioLabView } from "./components/AppShell";
+import {
+  AppShell,
+  type ScenarioLabView,
+} from "./components/AppShell";
 import type { ScenarioDetailLayer } from "./components/ScenarioLayerNav";
 import type {
   ScenarioLabClient,
@@ -161,47 +164,41 @@ export function ScenarioLabRoute() {
 
   if (loadState.status === "loading") {
     return (
-      <div className="sl-root">
-        <header className="sl-header">
-          <a className="sl-wordmark" href="/" aria-label="Dragback Guided Proof">
-            Dragback
-          </a>
-        </header>
-        <main className="sl-main">
-          <div className="sl-route-state" role="status">
-            <span className="sl-route-state__indicator" aria-hidden="true" />
-            <h1>Loading Scenario Lab</h1>
-            <p>Validating the catalog and checking all three services.</p>
-          </div>
-        </main>
-      </div>
+      <AppShell
+        activeView="catalog"
+        onNavigate={() => {
+          window.location.href = "/scenario-lab";
+        }}
+      >
+        <div className="sl-route-state" role="status">
+          <span className="sl-route-state__indicator" aria-hidden="true" />
+          <h1>Loading Scenario Lab</h1>
+          <p>Validating the catalog and checking all three services.</p>
+        </div>
+      </AppShell>
     );
   }
 
   if (loadState.status === "error") {
     return (
-      <div className="sl-root">
-        <header className="sl-header">
-          <a className="sl-wordmark" href="/" aria-label="Dragback Guided Proof">
-            Dragback
-          </a>
-        </header>
-        <main className="sl-main">
-          <div className="sl-route-state sl-route-state--error" role="alert">
-            <h1>Scenario Lab could not load.</h1>
-            <p>
-              {loadState.message}
-            </p>
-            <button
-              type="button"
-              className="sl-button sl-button--primary"
-              onClick={retry}
-            >
-              Retry
-            </button>
-          </div>
-        </main>
-      </div>
+      <AppShell
+        activeView="catalog"
+        onNavigate={() => {
+          window.location.href = "/scenario-lab";
+        }}
+      >
+        <div className="sl-route-state sl-route-state--error" role="alert">
+          <h1>Scenario Lab could not load.</h1>
+          <p>{loadState.message}</p>
+          <button
+            type="button"
+            className="sl-button sl-button--primary"
+            onClick={retry}
+          >
+            Retry
+          </button>
+        </div>
+      </AppShell>
     );
   }
 

@@ -159,6 +159,20 @@ const summary: ScenarioRunSummary = {
 };
 
 describe("Scenario Lab executive story components", () => {
+  it("uses the same three-item primary navigation with Guided Proof active", () => {
+    const html = renderToStaticMarkup(
+      <AppShell activeView="guided" onNavigate={() => undefined}>
+        <p>Guided proof</p>
+      </AppShell>,
+    );
+    expect(html).toContain('aria-label="Primary navigation"');
+    expect(html).toContain('href="/" aria-current="page"');
+    expect(html).toContain('href="/live-workspace"');
+    expect(html).toContain(">Scenario Lab</button>");
+    expect(html).not.toContain("Open Scenario Lab");
+    expect(html).not.toContain("Run report");
+  });
+
   it("keeps Scenario Lab active while exposing the separate Live Workspace route", () => {
     const html = renderToStaticMarkup(
       <AppShell activeView="catalog" onNavigate={() => undefined}>

@@ -1,6 +1,45 @@
 import type { LiveWorkspaceView } from "../model";
 import { CodeDocumentEditor } from "./CodeDocumentEditor";
 
+interface DecisionPreview {
+  id: string;
+  title: string;
+  text: string;
+  affectedScopes: readonly string[];
+}
+
+function decisionPreview(content: string): DecisionPreview | null {
+  try {
+    const value = JSON.parse(content) as {
+      decision?: {
+        id?: unknown;
+        title?: unknown;
+        text?: unknown;
+      };
+      affected_scopes?: unknown;
+    };
+    if (
+      typeof value.decision?.id !== "string" ||
+      typeof value.decision.title !== "string" ||
+      typeof value.decision.text !== "string"
+    ) {
+      return null;
+    }
+    return {
+      id: value.decision.id,
+      title: value.decision.title,
+      text: value.decision.text,
+      affectedScopes: Array.isArray(value.affected_scopes)
+        ? value.affected_scopes.filter(
+            (scope): scope is string => typeof scope === "string",
+          )
+        : [],
+    };
+  } catch {
+    return null;
+  }
+}
+
 export function WorkspaceChange({
   workspace,
   content,
@@ -31,18 +70,24 @@ export function WorkspaceChange({
   const approved = workspace.latestApprovedMutation;
   const proposed = workspace.status === "change-proposed" && pending;
   const applied = workspace.status === "change-applied";
+  const preview = decisionPreview(content);
 
   return (
-    <div className="lw-action-layout">
-      <section aria-labelledby="change-title">
+    <section className="lw-stage-content" aria-labelledby="change-title">
+      <div className="lw-stage-content__main">
         <div className="lw-section-heading">
           <div>
             <h2 id="change-title">
-              {proposed ? "Review the decision proposal" : "Propose a changed decision"}
+              {proposed
+                ? "Review the decision proposal"
+                : applied
+                  ? "The approved decision changed"
+                  : "Review the proposed decision change"}
             </h2>
             <p>
-              The proposal cannot change the graph until an authoritative role
-              approves it.
+              {applied
+                ? "The approved decision is now active. The original authorization still needs an independent check."
+                : "A proposal cannot change the graph until an authoritative role approves it."}
             </p>
           </div>
           <span>{workspace.graphVersion}</span>
@@ -67,9 +112,8 @@ export function WorkspaceChange({
           </div>
         ) : applied ? (
           <div className="lw-decision-applied">
-            <span aria-hidden="true">✓</span>
             <div>
-              <small>Approved decision</small>
+              <span>Approved decision</span>
               <h3>
                 {approved?.decision.title ??
                   "Approved decision created a new graph snapshot."}
@@ -78,56 +122,64 @@ export function WorkspaceChange({
                 <p>{approved.decision.text}</p>
               ) : null}
               <p>
-                Ask the independent executor to verify the original
-                authorization against {workspace.graphVersion}.
+                The ticket was not edited. Dragback found affected work through
+                the provenance graph.
               </p>
             </div>
           </div>
         ) : (
-          <CodeDocumentEditor
-            id="workspace-change-document"
-            label="Changed decision (JSON)"
-            description="Edit the proposal, superseded decision, and affected scopes before submitting."
-            value={content}
-            onChange={onContentChange}
-            disabled={busy}
-            rows={16}
-          />
+          <>
+            <article className="lw-change-preview">
+              <span>Decision proposal</span>
+              <code>{preview?.id ?? "Check JSON"}</code>
+              <h3>{preview?.title ?? "The proposal needs a title"}</h3>
+              <p>
+                {preview?.text ??
+                  "Open the JSON editor below to finish this proposal."}
+              </p>
+              {preview?.affectedScopes.length ? (
+                <small>
+                  Affected scope: {preview.affectedScopes.join(", ")}
+                </small>
+              ) : null}
+            </article>
+            <details className="lw-disclosure">
+              <summary>Edit proposal JSON</summary>
+              <p>
+                Update the decision, superseded decision ID, and affected
+                scopes before submitting.
+              </p>
+              <CodeDocumentEditor
+                id="workspace-change-document"
+                label="Decision proposal JSON"
+                value={content}
+                onChange={onContentChange}
+                disabled={busy}
+                rows={16}
+              />
+            </details>
+          </>
         )}
-      </section>
+      </div>
 
-      <aside className="lw-action-panel" aria-labelledby="change-action-title">
-        <h2 id="change-action-title">
-          {proposed
-            ? "Approve changed decision"
-            : applied
-              ? "Verify original grant"
-              : "Submit proposal"}
-        </h2>
-        <p>
-          {proposed
-            ? "The server validates role authority, scope containment, confidence, and requirement shape."
-            : applied
-              ? "Verification uses the stored grant and plan; no token is exposed to this page."
-              : "Submitting only records a proposal. It does not invalidate active work."}
-        </p>
-        <dl>
-          <div>
-            <dt>Current snapshot</dt>
-            <dd>{workspace.graphVersion}</dd>
-          </div>
-          <div>
-            <dt>Original grant</dt>
-            <dd>
-              {workspace.initialAuthorization?.grant?.authorizationId ??
-                "Unavailable"}
-            </dd>
-          </div>
-          <div>
-            <dt>Status</dt>
-            <dd>{workspace.status.replaceAll("-", " ")}</dd>
-          </div>
-        </dl>
+      <div className="lw-action-panel" aria-labelledby="change-action-title">
+        <div>
+          <h3 id="change-action-title">
+            {proposed
+              ? "Approve this change"
+              : applied
+                ? "Check the old authorization"
+                : "Submit as a proposal"}
+          </h3>
+          <p>
+            {proposed
+              ? "Dragback checks role authority, scope containment, confidence, and requirement shape."
+              : applied
+                ? "The executor checks the stored authorization against the new decision version. Secret tokens stay on the server."
+                : "Submitting records a proposal only. Active work remains authorized until approval."}
+          </p>
+        </div>
+        <div className="lw-action-panel__controls">
         {proposed ? (
           <>
             <label htmlFor="change-actor-role">Approver role</label>
@@ -149,7 +201,7 @@ export function WorkspaceChange({
               disabled={busy || !actorRole}
               onClick={onApprove}
             >
-              {busy ? "Approving…" : "Approve changed decision"}
+              {busy ? "Approving change…" : "Approve decision change"}
             </button>
             <button
               className="sl-button sl-button--quiet"
@@ -157,7 +209,7 @@ export function WorkspaceChange({
               disabled={busy}
               onClick={onCancel}
             >
-              Cancel and edit proposal
+              Cancel proposal
             </button>
           </>
         ) : applied ? (
@@ -166,20 +218,23 @@ export function WorkspaceChange({
             type="button"
             disabled={busy}
             onClick={onVerify}
-          >
-            {busy ? "Verifying…" : "Run independent verification"}
-          </button>
+            >
+              {busy
+                ? "Checking old authorization…"
+                : "Check original authorization"}
+            </button>
         ) : (
           <button
             className="sl-button sl-button--primary"
             type="button"
             disabled={busy}
             onClick={onPropose}
-          >
-            {busy ? "Submitting…" : "Submit decision proposal"}
-          </button>
+            >
+              {busy ? "Submitting proposal…" : "Submit proposal"}
+            </button>
         )}
-      </aside>
-    </div>
+        </div>
+      </div>
+    </section>
   );
 }

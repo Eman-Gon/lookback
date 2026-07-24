@@ -39,12 +39,23 @@ export function WorkspaceRequirements({
     >
       <h2 id="workspace-requirements-title">What Dragback needs</h2>
       <dl>
-        {REQUIREMENTS.map((requirement) => (
-          <div key={requirement.key}>
-            <dt>{requirement.label}</dt>
-            <dd>{requirement.detail}</dd>
-          </div>
-        ))}
+        {REQUIREMENTS.map((requirement) => {
+          const ready = readiness[requirement.key];
+          return (
+            <div key={requirement.key}>
+              <dt>
+                <span aria-hidden="true">{ready ? "✓" : "○"}</span>
+                {requirement.label}
+              </dt>
+              <dd>
+                {requirement.detail}
+                <span className="sl-visually-hidden">
+                  {ready ? " Present." : " Missing."}
+                </span>
+              </dd>
+            </div>
+          );
+        })}
       </dl>
       <p
         className={
@@ -56,8 +67,8 @@ export function WorkspaceRequirements({
       >
         <span aria-hidden="true">{readiness.ready ? "✓" : "○"}</span>
         {readiness.ready
-          ? "Ready. All required fields are present; server validation is next."
-          : "Ready when all required fields are present."}
+          ? "File looks complete. Server validation is next."
+          : "Add the missing fields before continuing."}
       </p>
     </section>
   );

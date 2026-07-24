@@ -1,16 +1,15 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { api } from "./api";
-import { DemoRunner, type DemoPhase } from "./components/DemoRunner";
-import { GraphPanel } from "./components/GraphPanel";
-import { GrantPanel } from "./components/GrantPanel";
-import { LoopPanel } from "./components/LoopPanel";
-import { RealityPanel } from "./components/RealityPanel";
+import {
+  GuidedProofView,
+  type GuidedProofPhase,
+} from "./components/GuidedProofView";
 import { ScenarioLabRoute } from "./scenario-lab/ScenarioLabRoute";
 import { LiveWorkspaceRoute } from "./live-workspace/LiveWorkspaceRoute";
+import { AppShell } from "./scenario-lab/components/AppShell";
 import {
   completedPhasesAfter,
   DemoOperationController,
-  enabledDemoPhases,
   isAbortError,
   OwnedCorrelationTracker,
   startSequentialPolling,
@@ -23,7 +22,7 @@ import type {
   ServiceHealth,
 } from "./types";
 
-const DEMO_PHASES: readonly DemoPhase[] = [
+const DEMO_PHASES: readonly GuidedProofPhase[] = [
   {
     id: "reset",
     shortLabel: "Baseline",
@@ -99,7 +98,6 @@ function GuidedProof() {
   const [activeIndex, setActiveIndex] = useState<number | null>(null);
   const [completedIds, setCompletedIds] = useState<Set<DemoPhaseId>>(() => new Set());
   const [isRunning, setIsRunning] = useState(false);
-  const [isManualBusy, setIsManualBusy] = useState(false);
   const [isComplete, setIsComplete] = useState(false);
   const [serviceHealth, setServiceHealth] = useState<ServiceHealth>({
     authority: false,
@@ -162,7 +160,6 @@ function GuidedProof() {
     cancelPendingDelay();
     setActiveIndex(null);
     setIsRunning(false);
-    setIsManualBusy(false);
     reconcileClientReset();
   }, [cancelPendingDelay, operationController, reconcileClientReset]);
 
@@ -311,10 +308,6 @@ function GuidedProof() {
     await refresh(signal);
   }, [ownedResetCorrelations, refresh]);
 
-  const enabledIds = useMemo(() => {
-    return enabledDemoPhases(authority, agent, executorAttempts);
-  }, [agent, authority, executorAttempts]);
-
   function waitForPhase(ms: number) {
     return new Promise<boolean>((resolve) => {
       const timer = window.setTimeout(() => {
@@ -326,7 +319,7 @@ function GuidedProof() {
   }
 
   async function runDemo() {
-    if (isRunning || isManualBusy) return;
+    if (isRunning) return;
 
     cancelPendingDelay();
     const operation = operationController.begin();
@@ -369,88 +362,35 @@ function GuidedProof() {
     cancelPendingDelay();
     setActiveIndex(null);
     setIsRunning(false);
-    setIsManualBusy(false);
     setIsComplete(false);
   }
-
-  async function runSinglePhase(index: number) {
-    if (isRunning || isManualBusy) return;
-    const phase = DEMO_PHASES[index];
-    if (!enabledIds.has(phase.id)) return;
-
-    const operation = operationController.begin();
-    setError("");
-    setIsComplete(false);
-    setIsManualBusy(true);
-    setActiveIndex(index);
-    try {
-      await performPhase(phase.id, operation.signal);
-      if (!operationController.isCurrent(operation)) return;
-      const nextCompleted = completedPhasesAfter(completedIds, phase.id);
-      const completed = nextCompleted.size === DEMO_PHASES.length;
-      setCompletedIds(nextCompleted);
-      setIsComplete(completed);
-      if (completed) setActiveIndex(null);
-    } catch (caught) {
-      if (operationController.isCurrent(operation) && !isAbortError(caught)) {
-        setError(`Phase ${index + 1} failed. ${errorMessage(caught)}`);
-      }
-    } finally {
-      if (operationController.isCurrent(operation)) {
-        operationController.finish(operation);
-        setIsManualBusy(false);
-      }
-    }
-  }
-
-  const isBusy = isRunning || isManualBusy;
   const onlineServiceCount = Object.values(serviceHealth).filter(Boolean).length;
-  const allServicesOnline = onlineServiceCount === 3;
 
   return (
-    <main>
-      <header className="site-header">
-        <div>
-          <p className="eyebrow">Decision provenance for coding agents</p>
-          <h1>Dragback</h1>
-          <p>Tests prove the code works. Dragback proves the work is still wanted.</p>
-        </div>
-        <div className="site-header-actions">
-          <a className="scenario-lab-link" href="/scenario-lab">
-            Open Scenario Lab
-          </a>
-          <div
-            className="system-state"
-            aria-label={`${onlineServiceCount} of 3 services online. Current graph ${authority?.graph_version ?? "offline"}`}
-          >
-            <span className={allServicesOnline ? "online" : ""} aria-hidden="true" />
-            {authority?.graph_version ?? "graph offline"} · {onlineServiceCount}/3 online
-          </div>
-        </div>
-      </header>
-
-      <DemoRunner
+    <AppShell
+      activeView="guided"
+      surface="guided-proof"
+      onNavigate={() => {
+        window.location.href = "/scenario-lab";
+      }}
+      graphSnapshot={authority?.graph_version}
+      servicesOnline={onlineServiceCount}
+      servicesTotal={3}
+    >
+      <GuidedProofView
+        authority={authority}
+        agent={agent}
+        executorAttempts={executorAttempts}
         phases={DEMO_PHASES}
         activeIndex={activeIndex}
         completedIds={completedIds}
-        enabledIds={enabledIds}
         isRunning={isRunning}
-        isBusy={isBusy}
         isComplete={isComplete}
+        error={error}
         onRun={runDemo}
         onStop={stopDemo}
-        onPhase={runSinglePhase}
       />
-
-      {error ? <div className="error" role="alert">{error}</div> : null}
-
-      <div className="grid">
-        <LoopPanel state={agent} />
-        <GrantPanel state={agent} executorAttempts={executorAttempts} />
-        <GraphPanel state={authority} />
-        <RealityPanel />
-      </div>
-    </main>
+    </AppShell>
   );
 }
 

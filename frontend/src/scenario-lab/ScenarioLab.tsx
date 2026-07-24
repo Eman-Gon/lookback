@@ -488,7 +488,6 @@ export function ScenarioLab({
     <AppShell
       activeView={view}
       onNavigate={navigate}
-      hasRunReport={runs.length > 0}
       navigationDisabled={busy}
       graphSnapshot={run?.graphSnapshot ?? data.graphSnapshot}
       servicesOnline={data.servicesOnline}

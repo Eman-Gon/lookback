@@ -1,7 +1,7 @@
 import type { ReactNode } from "react";
 
 export type ScenarioLabView = "catalog" | "run" | "report";
-export type AppShellView = ScenarioLabView | "workspace";
+export type AppShellView = ScenarioLabView | "guided" | "workspace";
 
 export interface AppShellAction {
   label: string;
@@ -14,20 +14,18 @@ export interface AppShellProps {
   children: ReactNode;
   activeView: AppShellView;
   onNavigate: (view: Exclude<ScenarioLabView, "run">) => void;
-  hasRunReport?: boolean;
   navigationDisabled?: boolean;
   graphSnapshot?: string;
   servicesOnline?: number;
   servicesTotal?: number;
   primaryAction?: AppShellAction;
-  surface?: "scenario-lab" | "live-workspace";
+  surface?: "guided-proof" | "scenario-lab" | "live-workspace";
 }
 
 export function AppShell({
   children,
   activeView,
   onNavigate,
-  hasRunReport = false,
   navigationDisabled = false,
   graphSnapshot,
   servicesOnline,
@@ -54,10 +52,11 @@ export function AppShell({
           Dragback
         </a>
 
-        <nav className="sl-header__nav" aria-label="Scenario Lab navigation">
+        <nav className="sl-header__nav" aria-label="Primary navigation">
           <a
             className="sl-nav-link"
             href="/"
+            aria-current={activeView === "guided" ? "page" : undefined}
             aria-disabled={navigationDisabled || undefined}
             onClick={(event) => {
               if (navigationDisabled) event.preventDefault();
@@ -69,7 +68,9 @@ export function AppShell({
             type="button"
             className="sl-nav-link"
             aria-current={
-              activeView === "catalog" || activeView === "run"
+              activeView === "catalog" ||
+              activeView === "run" ||
+              activeView === "report"
                 ? "page"
                 : undefined
             }
@@ -89,17 +90,6 @@ export function AppShell({
           >
             Live Workspace
           </a>
-          {hasRunReport ? (
-            <button
-              type="button"
-              className="sl-nav-link"
-              aria-current={activeView === "report" ? "page" : undefined}
-              onClick={() => onNavigate("report")}
-              disabled={navigationDisabled}
-            >
-              Run report
-            </button>
-          ) : null}
         </nav>
 
         <div className="sl-header__utilities">
@@ -151,9 +141,10 @@ export function AppShell({
             </svg>
             <span>Menu</span>
           </summary>
-          <nav aria-label="Mobile Scenario Lab navigation">
+          <nav aria-label="Mobile primary navigation">
             <a
               href="/"
+              aria-current={activeView === "guided" ? "page" : undefined}
               aria-disabled={navigationDisabled || undefined}
               onClick={(event) => {
                 if (navigationDisabled) event.preventDefault();
@@ -164,7 +155,9 @@ export function AppShell({
             <button
               type="button"
               aria-current={
-                activeView === "catalog" || activeView === "run"
+                activeView === "catalog" ||
+                activeView === "run" ||
+                activeView === "report"
                   ? "page"
                   : undefined
               }
@@ -186,21 +179,6 @@ export function AppShell({
             >
               Live Workspace
             </a>
-            {hasRunReport ? (
-              <button
-                type="button"
-                aria-current={activeView === "report" ? "page" : undefined}
-                disabled={navigationDisabled}
-                onClick={(event) => {
-                  onNavigate("report");
-                  event.currentTarget
-                    .closest("details")
-                    ?.removeAttribute("open");
-                }}
-              >
-                Run report
-              </button>
-            ) : null}
             <a
               href="https://github.com/Eman-Gon/lookback#readme"
               target="_blank"

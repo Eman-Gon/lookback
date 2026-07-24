@@ -8,8 +8,10 @@ import {
 import {
   activeWorkspaceStage,
   editWorkspaceDocument,
+  workspaceGuide,
   workspaceReadiness,
   workspaceStageProgress,
+  workspaceVerificationReport,
 } from "./state";
 import { RAW_WORKSPACE } from "./test-fixtures";
 
@@ -23,21 +25,44 @@ describe("Live Workspace state helpers", () => {
     ).toEqual({ content: "id: edited", format: "yaml" });
   });
 
-  it("derives the four guarded stages from backend-owned status", () => {
+  it("derives the five guided stages from backend-owned status", () => {
     expect(activeWorkspaceStage()).toBe("import");
     expect(activeWorkspaceStage("imported")).toBe("approve-baseline");
     expect(activeWorkspaceStage("baseline-approved")).toBe("authorize-plan");
-    expect(activeWorkspaceStage("authorized")).toBe("verify-change");
+    expect(activeWorkspaceStage("authorized")).toBe("apply-change");
+    expect(activeWorkspaceStage("initial-grant-rejected")).toBe(
+      "verify-update",
+    );
     expect(workspaceStageProgress("import", "authorized")).toBe("complete");
-    expect(workspaceStageProgress("verify-change", "authorized")).toBe(
+    expect(workspaceStageProgress("apply-change", "authorized")).toBe(
       "current",
     );
     expect(
-      workspaceStageProgress("verify-change", "initial-grant-rejected"),
+      workspaceStageProgress("verify-update", "initial-grant-rejected"),
     ).toBe("attention");
-    expect(workspaceStageProgress("verify-change", "complete")).toBe(
+    expect(workspaceStageProgress("verify-update", "complete")).toBe(
       "complete",
     );
+  });
+
+  it("returns concise current-step guidance and explicit wait copy", () => {
+    expect(workspaceGuide()).toMatchObject({
+      step: 1,
+      totalSteps: 5,
+      title: "Add your workspace",
+      stateLabel: "Waiting for a file",
+    });
+    expect(workspaceGuide("change-applied")).toMatchObject({
+      step: 4,
+      title: "Check the original authorization",
+      busyMessage:
+        "The independent executor is checking the original authorization…",
+    });
+    expect(workspaceGuide("complete")).toMatchObject({
+      step: 5,
+      title: "Workspace verified",
+      tone: "complete",
+    });
   });
 
   it("requires the decision, ticket/tasks, scoped plan, and authority policy", () => {
@@ -123,5 +148,16 @@ describe("Live Workspace state helpers", () => {
     expect(change.decision.attributes.requirements).toEqual({
       "refund.execution": { mode: "human_approval_over_500" },
     });
+  });
+
+  it("builds a useful verification report without raw authorization tokens", () => {
+    const report = workspaceVerificationReport(mapLiveWorkspace(RAW_WORKSPACE));
+    const serialized = JSON.stringify(report);
+    expect(serialized).toContain("STALE_SNAPSHOT");
+    expect(serialized).toContain("TASK-003");
+    expect(serialized).toContain("DEC-002");
+    expect(serialized).not.toContain("signed_token");
+    expect(serialized).not.toContain("grant_token");
+    expect(serialized).not.toContain("token");
   });
 });
