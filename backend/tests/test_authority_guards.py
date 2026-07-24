@@ -52,6 +52,24 @@ def test_scopes_outside_the_declared_change_are_rejected(mismatch_source: str) -
     assert all(item.id != "DEC-018" for item in authority.graph.list_artifacts())
 
 
+def test_missing_requirement_scope_is_rejected_before_any_graph_mutation() -> None:
+    authority = make_authority()
+    mutation = load_decision_v18()
+    mutation.decision.attributes["requirements"].pop("export.authorization")
+    original_artifacts = authority.graph.list_artifacts()
+    original_edges = authority.graph.list_edges()
+
+    result = authority.apply_decision_change(mutation)
+
+    assert result.applied is False
+    assert result.verdict is Verdict.HUMAN_REVIEW
+    assert "exactly match" in result.reason
+    assert authority.graph.version_label == "graph-v17"
+    assert authority.graph.list_artifacts() == original_artifacts
+    assert authority.graph.list_edges() == original_edges
+    assert authority.last_report is None
+
+
 def test_only_a_decision_can_be_a_supersession_target() -> None:
     authority = make_authority()
     mutation = load_decision_v18().model_copy(update={"supersedes_id": "TICKET-100"})

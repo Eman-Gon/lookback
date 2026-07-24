@@ -23,6 +23,21 @@ def replan_for_requirements(
     return corrected
 
 
+def apply_authorization_result(run: AgentRun, result: AuthorizationResult) -> None:
+    """Apply an authority verdict to agent-owned loop state."""
+
+    run.graph_snapshot = result.graph_version
+    run.grant_token = result.grant.token if result.grant else None
+    if result.verdict is Verdict.ALLOW:
+        run.state = LoopState.ACT
+    elif result.verdict is Verdict.REPLAN:
+        run.state = LoopState.REPLAN
+    elif result.verdict is Verdict.BLOCK:
+        run.state = LoopState.BLOCKED
+    else:
+        run.state = LoopState.HUMAN_REVIEW
+
+
 class AgentLoopController:
     def __init__(self, *, authority: IntentAuthority, run: AgentRun) -> None:
         self.authority = authority
@@ -71,16 +86,7 @@ class AgentLoopController:
 
     def _apply_result(self, result: AuthorizationResult) -> None:
         self.last_authorization = result
-        self.run.graph_snapshot = result.graph_version
-        self.run.grant_token = result.grant.token if result.grant else None
-        if result.verdict is Verdict.ALLOW:
-            self.run.state = LoopState.ACT
-        elif result.verdict is Verdict.REPLAN:
-            self.run.state = LoopState.REPLAN
-        elif result.verdict is Verdict.BLOCK:
-            self.run.state = LoopState.BLOCKED
-        else:
-            self.run.state = LoopState.HUMAN_REVIEW
+        apply_authorization_result(self.run, result)
 
 
 class WorkflowState(TypedDict, total=False):

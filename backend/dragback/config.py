@@ -8,6 +8,7 @@ from dotenv import load_dotenv
 load_dotenv()
 _ENVIRONMENT = os.getenv("DRAGBACK_ENV", "development")
 _GRAPH_BACKEND = os.getenv("DRAGBACK_GRAPH_BACKEND", "memory")
+DEFAULT_AUTHORITY_THRESHOLD = 0.75
 
 
 def _env_flag(name: str, default: bool) -> bool:
@@ -36,7 +37,9 @@ class Settings:
     graph_backend: str = _GRAPH_BACKEND
     grant_secret: str = os.getenv("DRAGBACK_GRANT_SECRET", "dragback-local-demo-secret")
     grant_ttl_seconds: int = int(os.getenv("DRAGBACK_GRANT_TTL_SECONDS", "3600"))
-    authority_threshold: float = float(os.getenv("DRAGBACK_AUTHORITY_THRESHOLD", "0.75"))
+    authority_threshold: float = float(
+        os.getenv("DRAGBACK_AUTHORITY_THRESHOLD", str(DEFAULT_AUTHORITY_THRESHOLD))
+    )
     authority_url: str = os.getenv("DRAGBACK_AUTHORITY_URL", "http://localhost:8001")
     agent_url: str = os.getenv("DRAGBACK_AGENT_URL", "http://localhost:8002")
     executor_url: str = os.getenv("DRAGBACK_EXECUTOR_URL", "http://localhost:8003")

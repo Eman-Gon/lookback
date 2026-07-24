@@ -54,6 +54,17 @@ class Verdict(StrEnum):
     HUMAN_REVIEW = "HUMAN_REVIEW"
 
 
+class VerificationCode(StrEnum):
+    VALID = "VALID"
+    INVALID_TOKEN = "INVALID_TOKEN"
+    NON_ALLOW_VERDICT = "NON_ALLOW_VERDICT"
+    EXPIRED = "EXPIRED"
+    BINDING_MISMATCH = "BINDING_MISMATCH"
+    PLAN_HASH_MISMATCH = "PLAN_HASH_MISMATCH"
+    STALE_SNAPSHOT = "STALE_SNAPSHOT"
+    CURRENT_PLAN_REJECTED = "CURRENT_PLAN_REJECTED"
+
+
 class LoopState(StrEnum):
     PLAN = "PLAN"
     VERIFY = "VERIFY"
@@ -135,6 +146,9 @@ class InvalidationReport(BaseModel):
     affected_scopes: set[str]
     affected_artifact_ids: list[str] = Field(default_factory=list)
     upstream_chain_artifact_ids: list[str] = Field(default_factory=list)
+    preserved_task_ids: list[str] = Field(default_factory=list)
+    invalidated_task_ids: list[str] = Field(default_factory=list)
+    needs_review_artifact_ids: list[str] = Field(default_factory=list)
     stopped_work_artifact_ids: list[str] = Field(default_factory=list)
     directly_mentioned_artifact_ids: list[str] = Field(default_factory=list)
     preserved_artifact_ids: list[str] = Field(default_factory=list)
@@ -203,5 +217,6 @@ class GrantVerificationRequest(BaseModel):
 
 class GrantVerificationResult(BaseModel):
     valid: bool
+    code: VerificationCode
     reason: str
     payload: GrantPayload | None = None

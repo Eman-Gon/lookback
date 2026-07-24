@@ -5,6 +5,7 @@ import { GraphPanel } from "./components/GraphPanel";
 import { GrantPanel } from "./components/GrantPanel";
 import { LoopPanel } from "./components/LoopPanel";
 import { RealityPanel } from "./components/RealityPanel";
+import { ScenarioLabRoute } from "./scenario-lab/ScenarioLabRoute";
 import {
   completedPhasesAfter,
   DemoOperationController,
@@ -89,7 +90,7 @@ function errorMessage(caught: unknown) {
   return caught instanceof Error ? caught.message : String(caught);
 }
 
-export default function App() {
+function GuidedProof() {
   const [authority, setAuthority] = useState<AuthorityState | null>(null);
   const [agent, setAgent] = useState<AgentState | null>(null);
   const [executorAttempts, setExecutorAttempts] = useState<ExecutionAttempt[]>([]);
@@ -413,12 +414,17 @@ export default function App() {
           <h1>Dragback</h1>
           <p>Tests prove the code works. Dragback proves the work is still wanted.</p>
         </div>
-        <div
-          className="system-state"
-          aria-label={`${onlineServiceCount} of 3 services online. Current graph ${authority?.graph_version ?? "offline"}`}
-        >
-          <span className={allServicesOnline ? "online" : ""} aria-hidden="true" />
-          {authority?.graph_version ?? "graph offline"} · {onlineServiceCount}/3 online
+        <div className="site-header-actions">
+          <a className="scenario-lab-link" href="/scenario-lab">
+            Open Scenario Lab
+          </a>
+          <div
+            className="system-state"
+            aria-label={`${onlineServiceCount} of 3 services online. Current graph ${authority?.graph_version ?? "offline"}`}
+          >
+            <span className={allServicesOnline ? "online" : ""} aria-hidden="true" />
+            {authority?.graph_version ?? "graph offline"} · {onlineServiceCount}/3 online
+          </div>
         </div>
       </header>
 
@@ -444,5 +450,13 @@ export default function App() {
         <RealityPanel />
       </div>
     </main>
+  );
+}
+
+export default function App() {
+  return window.location.pathname.startsWith("/scenario-lab") ? (
+    <ScenarioLabRoute />
+  ) : (
+    <GuidedProof />
   );
 }

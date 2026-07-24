@@ -5,6 +5,7 @@ from copy import deepcopy
 from datetime import datetime
 from typing import Any
 
+from dragback.config import DEFAULT_AUTHORITY_THRESHOLD
 from dragback.domain import (
     AgentPlan,
     ApprovalStatus,
@@ -21,19 +22,19 @@ from dragback.domain import (
     PlanMismatch,
     ValidityStatus,
     Verdict,
+    VerificationCode,
     utc_now,
 )
 from dragback.grants import GrantSigner
 from dragback.graph.base import GraphStore
 from dragback.hashing import stable_hash
+from dragback.provenance import (
+    AUTHORITY_DOWNSTREAM_EDGE_KINDS,
+    authority_edge_sort_key,
+    select_primary_invalidation_path,
+)
 
-DOWNSTREAM_EDGES = {
-    EdgeKind.BASIS_FOR,
-    EdgeKind.CREATES,
-    EdgeKind.DECOMPOSES_TO,
-    EdgeKind.CURRENTLY_DRIVES,
-    EdgeKind.IMPLEMENTS,
-}
+DOWNSTREAM_EDGES = AUTHORITY_DOWNSTREAM_EDGE_KINDS
 
 UPSTREAM_ARTIFACT_KINDS = {
     ArtifactKind.DECISION,
@@ -63,7 +64,7 @@ class IntentAuthority:
         *,
         graph: GraphStore,
         signer: GrantSigner,
-        authority_threshold: float = 0.75,
+        authority_threshold: float = DEFAULT_AUTHORITY_THRESHOLD,
         authority_policy: dict[str, set[str]] | None = None,
     ) -> None:
         self.graph = graph
@@ -120,14 +121,14 @@ class IntentAuthority:
             )
         requirement_scopes = set(raw_requirements)
         mismatched_scopes = decision.scopes ^ mutation.affected_scopes
-        requirements_outside_change = requirement_scopes - mutation.affected_scopes
-        if mismatched_scopes or requirements_outside_change:
+        requirement_scope_mismatch = requirement_scopes ^ mutation.affected_scopes
+        if mismatched_scopes or requirement_scope_mismatch:
             return MutationResult(
                 applied=False,
                 reason=(
-                    "Decision scopes must match the declared change, and requirements must stay "
-                    "within it: "
-                    + ", ".join(sorted(mismatched_scopes | requirements_outside_change))
+                    "Decision scopes and requirement scopes must exactly match the "
+                    "declared change: "
+                    + ", ".join(sorted(mismatched_scopes | requirement_scope_mismatch))
                 ),
                 graph_version=self.graph.version_label,
                 verdict=Verdict.HUMAN_REVIEW,
@@ -249,7 +250,11 @@ class IntentAuthority:
 
         while queue:
             current_id, current_path = queue.popleft()
-            for edge in self.graph.outgoing_edges(current_id, DOWNSTREAM_EDGES):
+            outgoing = sorted(
+                self.graph.outgoing_edges(current_id, DOWNSTREAM_EDGES),
+                key=authority_edge_sort_key,
+            )
+            for edge in outgoing:
                 child = self.graph.get_artifact(edge.target_id)
                 record_evidence(edge.evidence_ref)
                 record_evidence(child.source_ref)
@@ -269,7 +274,7 @@ class IntentAuthority:
                     queue.append((child.id, next_path))
 
         affected_artifacts = [self.graph.get_artifact(artifact_id) for artifact_id in affected]
-        primary_path = max(paths, key=lambda item: len(item.node_ids), default=None)
+        primary_path = select_primary_invalidation_path(paths)
         upstream_chain: list[str] = []
         primary_path_ids = primary_path.node_ids if primary_path else [changed_decision.id]
         for artifact_id in primary_path_ids:
@@ -285,6 +290,22 @@ class IntentAuthority:
             for artifact in affected_artifacts
             if artifact.kind in STOPPABLE_WORK_KINDS
         ]
+        preserved_task_ids = [
+            artifact_id
+            for artifact_id in preserved
+            if self.graph.get_artifact(artifact_id).kind is ArtifactKind.TASK
+        ]
+        invalidated_task_ids = [
+            artifact.id
+            for artifact in affected_artifacts
+            if artifact.kind is ArtifactKind.TASK
+            and artifact.validity is ValidityStatus.INVALIDATED
+        ]
+        needs_review_artifact_ids = [
+            artifact.id
+            for artifact in affected_artifacts
+            if artifact.validity is ValidityStatus.NEEDS_REVIEW
+        ]
         normalized_decision_text = changed_decision.text.casefold()
         directly_mentioned = [
             artifact.id
@@ -299,6 +320,9 @@ class IntentAuthority:
             affected_scopes=affected_scopes,
             affected_artifact_ids=affected,
             upstream_chain_artifact_ids=upstream_chain,
+            preserved_task_ids=preserved_task_ids,
+            invalidated_task_ids=invalidated_task_ids,
+            needs_review_artifact_ids=needs_review_artifact_ids,
             stopped_work_artifact_ids=stopped_work,
             directly_mentioned_artifact_ids=directly_mentioned,
             preserved_artifact_ids=preserved,
@@ -366,6 +390,51 @@ class IntentAuthority:
             affected_scopes.add(scope)
 
         for action in plan.actions:
+            if "task_id" in action.attributes:
+                referenced_task_id = action.attributes.get("task_id")
+                referenced_task: Artifact | None = None
+                if isinstance(referenced_task_id, str):
+                    try:
+                        referenced_task = self.graph.get_artifact(referenced_task_id)
+                    except KeyError:
+                        pass
+                reference_scopes = (
+                    action.scopes
+                    | (referenced_task.invalidated_scopes if referenced_task else set())
+                )
+                reference_scope = (
+                    sorted(reference_scopes)[0] if reference_scopes else "task.reference"
+                )
+                reference_actual: dict[str, Any] | None = None
+                if referenced_task is None:
+                    reference_actual = {
+                        "task_id": referenced_task_id,
+                        "validity": "MISSING",
+                    }
+                elif referenced_task.kind is not ArtifactKind.TASK:
+                    reference_actual = {
+                        "task_id": referenced_task_id,
+                        "kind": referenced_task.kind.value,
+                    }
+                elif referenced_task.validity is not ValidityStatus.VALID:
+                    reference_actual = {
+                        "task_id": referenced_task_id,
+                        "validity": referenced_task.validity.value,
+                    }
+                if reference_actual is not None:
+                    mismatches.append(
+                        PlanMismatch(
+                            action_id=action.id,
+                            scope=reference_scope,
+                            expected={
+                                "task_id": referenced_task_id,
+                                "validity": ValidityStatus.VALID.value,
+                            },
+                            actual=reference_actual,
+                        )
+                    )
+                    affected_scopes.update(reference_scopes)
+
             for scope in action.scopes:
                 scope_requirement = requirements.get(scope)
                 if scope_requirement is None:
@@ -399,7 +468,10 @@ class IntentAuthority:
         if mismatches:
             return AuthorizationResult(
                 verdict=Verdict.REPLAN,
-                reason="The plan conflicts with current approved requirements.",
+                reason=(
+                    "The plan conflicts with current approved requirements "
+                    "or current graph validity."
+                ),
                 graph_version=self.graph.version_label,
                 task_id=task_id,
                 affected_scopes=affected_scopes,
@@ -442,34 +514,45 @@ class IntentAuthority:
         try:
             payload = self.signer.decode(token)
         except (ValueError, TypeError) as exc:
-            return GrantVerificationResult(valid=False, reason=str(exc))
+            return GrantVerificationResult(
+                valid=False,
+                code=VerificationCode.INVALID_TOKEN,
+                reason=str(exc),
+            )
 
         if payload.verdict is not Verdict.ALLOW:
             return GrantVerificationResult(
                 valid=False,
+                code=VerificationCode.NON_ALLOW_VERDICT,
                 reason=f"Grant payload verdict is {payload.verdict.value}, not ALLOW.",
                 payload=payload,
             )
         if payload.expires_at <= utc_now():
             return GrantVerificationResult(
                 valid=False,
+                code=VerificationCode.EXPIRED,
                 reason="Grant has expired.",
                 payload=payload,
             )
         if payload.run_id != run_id or payload.task_id != task_id:
             return GrantVerificationResult(
-                valid=False, reason="Grant is bound to a different run or task.", payload=payload
+                valid=False,
+                code=VerificationCode.BINDING_MISMATCH,
+                reason="Grant is bound to a different run or task.",
+                payload=payload,
             )
         current_hash = stable_hash(plan)
         if payload.plan_hash != current_hash:
             return GrantVerificationResult(
                 valid=False,
+                code=VerificationCode.PLAN_HASH_MISMATCH,
                 reason="Grant plan hash does not match the proposed plan.",
                 payload=payload,
             )
         if payload.decision_snapshot != self.graph.version_label:
             return GrantVerificationResult(
                 valid=False,
+                code=VerificationCode.STALE_SNAPSHOT,
                 reason=(
                     f"Grant snapshot {payload.decision_snapshot} is stale; "
                     f"current graph is {self.graph.version_label}."
@@ -481,7 +564,13 @@ class IntentAuthority:
         if fresh.verdict is not Verdict.ALLOW:
             return GrantVerificationResult(
                 valid=False,
+                code=VerificationCode.CURRENT_PLAN_REJECTED,
                 reason=f"Current plan verdict is {fresh.verdict.value}, not ALLOW.",
                 payload=payload,
             )
-        return GrantVerificationResult(valid=True, reason="Grant is valid.", payload=payload)
+        return GrantVerificationResult(
+            valid=True,
+            code=VerificationCode.VALID,
+            reason="Grant is valid.",
+            payload=payload,
+        )

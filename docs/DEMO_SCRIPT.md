@@ -1,5 +1,21 @@
 # Demo script — 3 to 5 minutes
 
+## Presenter entry
+
+Use one of these browser routes after `make stack`:
+
+- `/` for the canonical eight-phase proof;
+- `/scenario-lab?demo=1` for the four-stage CSV Scenario Lab presentation;
+- `/scenario-lab` to show the 12-scenario catalog and Run All report;
+- `/scenario-lab?scenario=api-read-only` to deep-link another scenario.
+
+In the Scenario Lab route, select **Start guided run** once and use **Next demo step** three times.
+For a hands-off pass, use **Run remaining steps**; **Pause automatic run** returns control between
+stages. Keep the default **Story** layer for the narrative, then open **Evidence** when asked for the
+full graph, typed edges, grants, timeline, evaluation, or source references. The visible stages are
+`authorized`, `decision-changed`, `work-stopped`, and `reauthorized`. The query string selects the
+opening view only; it does not start a run or inject a decision.
+
 ## 0:00–0:25 — problem
 
 “Coding agents can write correct code from obsolete decisions. Tests tell an agent whether the code works. Dragback tells it whether the work is still wanted.”
@@ -33,7 +49,8 @@ Show the path lighting up.
 Point to the two separate payload summaries:
 
 - upstream provenance chain: `DEC-018 → DEC-004 → SPEC-009 → TICKET-100`;
-- downstream work stopped: `TASK-102 · PLAN-027`.
+- invalidated task: `TASK-102`;
+- plan needs review: `PLAN-027`.
 
 Say: “The approved decision text never names `TICKET-100`; the graph finds it through lineage.”
 
@@ -62,7 +79,9 @@ The executor, not the agent or UI, performs this check.
 
 ## 3:25–4:00 — replan
 
-Show the loop move to `REPLAN`. The corrected plan preserves CSV generation and changes the audience to `admin_only`. It receives a new `graph-v18` grant and the executor accepts it.
+Show the loop move to `REPLAN`. The fixture-generated corrective plan preserves CSV generation and
+proposes changing the audience to `admin_only`. Its plan actions are not persisted graph Tasks. The
+authority evaluates it, issues a new `graph-v18` grant, and the executor accepts it.
 
 If asked how general the replanner is, say: “Enforcement, traversal, invalidation, and
 reauthorization are general. The corrective `PLAN-028` text is a deterministic demo template; a
@@ -81,3 +100,21 @@ Show only:
 “Most agent controls ask whether the agent may act. Dragback verifies whether the objective driving that action still follows from current approved company intent.”
 
 > Tests prove the code works. Dragback proves the work is still wanted.
+
+## Scenario Lab Q&A
+
+If asked whether the other scenarios are frontend mocks, say: “No. All 12 use typed backend graph
+fixtures and the same deterministic authority engine. Every run creates an isolated in-memory
+authority context, and the agent calls the authority and executor over HTTP.”
+
+If asked what is simulated, say: “The scenario inputs, provenance fixtures, corrected-plan wording,
+proposed corrective actions, and mock pull request are fixture-driven. Corrective actions are plan
+actions, not persisted graph Task nodes. Graph writes, policy checks, traversal, invalidation,
+grant signing, structured stale-grant rejection, reauthorization, and evaluation are real.”
+
+If the canonical runtime is using Neo4j, clarify: “Scenario Lab intentionally uses a separate
+`MemoryGraphStore` per run, so Run All cannot erase or mutate the configured Neo4j database.”
+
+If asked whether Run All is a durable benchmark, say: “No. It runs the same isolated service flow
+serially and keeps session-only, process-local results. Restarting the agent service clears that
+history.”

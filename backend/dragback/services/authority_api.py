@@ -13,6 +13,13 @@ from dragback.domain import (
     GrantVerificationRequest,
 )
 from dragback.runtime import create_authority_runtime
+from dragback.scenarios.authority_contexts import (
+    ScenarioAuthorityContextConflict,
+    ScenarioAuthorityContextCreateRequest,
+    ScenarioAuthorityContextNotFound,
+    ScenarioAuthorityContextRegistry,
+    ScenarioDefinitionNotFound,
+)
 from dragback.services.events import EventBroker, snapshot_event, stream_events
 from dragback.services.support import (
     CORRELATION_ID_HEADER,
@@ -23,6 +30,11 @@ from dragback.services.support import (
 )
 
 runtime = create_authority_runtime()
+scenario_contexts = ScenarioAuthorityContextRegistry(
+    grant_secret=settings.grant_secret,
+    grant_ttl_seconds=settings.grant_ttl_seconds,
+    authority_threshold=settings.authority_threshold,
+)
 event_broker = EventBroker()
 runtime_lock = RLock()
 app = FastAPI(title="Dragback Intent Authority", version="0.1.0")
@@ -144,4 +156,102 @@ def verify_grant(request: GrantVerificationRequest):
             task_id=request.task_id,
             plan=request.plan,
         )
+    return correlated_payload(result)
+
+
+@app.post("/scenario-lab/authority/contexts", status_code=201)
+def create_scenario_authority_context(
+    request: ScenarioAuthorityContextCreateRequest,
+) -> dict[str, object]:
+    try:
+        state = scenario_contexts.create(request)
+    except ScenarioDefinitionNotFound as exc:
+        raise ApiError(
+            status_code=404,
+            code="SCENARIO_NOT_FOUND",
+            message="The requested scenario does not exist.",
+        ) from exc
+    except ScenarioAuthorityContextConflict as exc:
+        raise ApiError(
+            status_code=409,
+            code="SCENARIO_CONTEXT_CONFLICT",
+            message=str(exc),
+        ) from exc
+    return correlated_payload(state)
+
+
+@app.get("/scenario-lab/authority/contexts/{context_id}")
+def scenario_authority_context_state(context_id: str) -> dict[str, object]:
+    try:
+        state = scenario_contexts.state(context_id)
+    except ScenarioAuthorityContextNotFound as exc:
+        raise ApiError(
+            status_code=404,
+            code="SCENARIO_CONTEXT_NOT_FOUND",
+            message="The requested Scenario Lab authority context does not exist.",
+        ) from exc
+    return correlated_payload(state)
+
+
+@app.delete("/scenario-lab/authority/contexts/{context_id}")
+def delete_scenario_authority_context(context_id: str) -> dict[str, object]:
+    try:
+        scenario_contexts.delete(context_id)
+    except ScenarioAuthorityContextNotFound as exc:
+        raise ApiError(
+            status_code=404,
+            code="SCENARIO_CONTEXT_NOT_FOUND",
+            message="The requested Scenario Lab authority context does not exist.",
+        ) from exc
+    return correlated_payload({"context_id": context_id, "deleted": True})
+
+
+@app.post("/scenario-lab/authority/contexts/{context_id}/mutation")
+def apply_scenario_authority_mutation(context_id: str) -> dict[str, object]:
+    try:
+        result = scenario_contexts.apply_mutation(context_id)
+    except ScenarioAuthorityContextNotFound as exc:
+        raise ApiError(
+            status_code=404,
+            code="SCENARIO_CONTEXT_NOT_FOUND",
+            message="The requested Scenario Lab authority context does not exist.",
+        ) from exc
+    except ScenarioAuthorityContextConflict as exc:
+        raise ApiError(
+            status_code=409,
+            code="SCENARIO_CONTEXT_CONFLICT",
+            message=str(exc),
+        ) from exc
+    return correlated_payload(result)
+
+
+@app.post("/scenario-lab/authority/contexts/{context_id}/authorize")
+def authorize_in_scenario_context(
+    context_id: str,
+    request: AuthorizationRequest,
+) -> dict[str, object]:
+    try:
+        result = scenario_contexts.authorize(context_id, request)
+    except ScenarioAuthorityContextNotFound as exc:
+        raise ApiError(
+            status_code=404,
+            code="SCENARIO_CONTEXT_NOT_FOUND",
+            message="The requested Scenario Lab authority context does not exist.",
+        ) from exc
+    return correlated_payload(result)
+
+
+@app.post("/scenario-lab/authority/contexts/{context_id}/grants/verify")
+def verify_grant_in_scenario_context(
+    context_id: str,
+    request: GrantVerificationRequest,
+) -> dict[str, object]:
+    try:
+        result = scenario_contexts.verify_grant(context_id, request)
+    except ScenarioAuthorityContextNotFound as exc:
+        raise ApiError(
+            status_code=404,
+            code="SCENARIO_CONTEXT_NOT_FOUND",
+            message="The requested Scenario Lab authority context does not exist.",
+        ) from exc
     return correlated_payload(result)

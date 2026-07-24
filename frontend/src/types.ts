@@ -34,6 +34,9 @@ export interface InvalidationReport {
   stopped_work_artifact_ids: string[];
   directly_mentioned_artifact_ids: string[];
   preserved_artifact_ids: string[];
+  preserved_task_ids?: string[];
+  invalidated_task_ids?: string[];
+  needs_review_artifact_ids?: string[];
   paths: InvalidationPath[];
   evidence_refs: string[];
 }

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from dragback.config import settings
 from dragback.domain import AgentPlan, GrantVerificationRequest, GrantVerificationResult
@@ -20,6 +20,10 @@ class ExecuteRequest(BaseModel):
     run_id: str
     task_id: str
     plan: AgentPlan
+    context_id: str | None = Field(
+        default=None,
+        pattern=r"^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$",
+    )
 
 
 app = FastAPI(title="Dragback Mock Executor", version="0.1.0")
@@ -46,8 +50,14 @@ def execute(request: ExecuteRequest) -> dict[str, object]:
         task_id=request.task_id,
         plan=request.plan,
     )
+    verification_url = (
+        f"{settings.authority_url}/scenario-lab/authority/contexts/"
+        f"{request.context_id}/grants/verify"
+        if request.context_id
+        else f"{settings.authority_url}/grants/verify"
+    )
     verification = post_model(
-        url=f"{settings.authority_url}/grants/verify",
+        url=verification_url,
         payload=payload,
         response_model=GrantVerificationResult,
         upstream_name="Intent authority",
@@ -56,11 +66,18 @@ def execute(request: ExecuteRequest) -> dict[str, object]:
     )
 
     if not verification.valid:
-        return correlated_payload({"applied": False, "reason": verification.reason})
+        return correlated_payload(
+            {
+                "applied": False,
+                "reason": verification.reason,
+                "verification_code": verification.code.value,
+            }
+        )
     return correlated_payload(
         {
             "applied": True,
             "reason": "Grant verified; mock pull request created.",
+            "verification_code": verification.code.value,
             "pull_request_url": "https://example.invalid/dragback/pull/42",
         }
     )

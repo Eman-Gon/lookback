@@ -127,6 +127,21 @@ When time is constrained, work in this order:
 6. Neo4j parity
 7. optional LLM extraction
 
+## Scenario Lab expansion
+
+The canonical CSV proof remains the frozen Guided Proof and must keep satisfying the
+definition of done above. A separate **Scenario Lab** may add multiple deterministic
+fixtures when it:
+
+- reuses the real authority, graph, grant, agent-loop, and executor paths;
+- keeps expected outcomes assertion-only;
+- isolates every run with unique context and run identifiers;
+- clearly labels fixture-driven corrected-plan wording and simulated integrations; and
+- preserves the Guided Proof at its existing entry point.
+
+Correctness, isolation, testing, and visual fidelity take priority over implementation
+speed for this expansion.
+
 ## Do not spend hackathon time on
 
 - live OAuth integrations
@@ -135,7 +150,6 @@ When time is constrained, work in this order:
 - a broad enterprise dashboard
 - production deployment infrastructure
 - elaborate cryptography
-- multiple demo scenarios
 
 ## Code style
 

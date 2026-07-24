@@ -18,6 +18,16 @@ from dragback.domain import (
 )
 from dragback.fixtures import load_graph_fixture
 from dragback.loop.workflow import replan_for_requirements
+from dragback.scenarios.run_models import (
+    ScenarioAdvanceRequest,
+    ScenarioRunAllRequest,
+    ScenarioRunRequest,
+)
+from dragback.scenarios.runner import (
+    ScenarioRunConflict,
+    ScenarioRunner,
+    ScenarioRunNotFound,
+)
 from dragback.services.events import EventBroker, snapshot_event, stream_events
 from dragback.services.support import (
     CORRELATION_ID_HEADER,
@@ -44,6 +54,7 @@ initial_grant_token: str | None = None
 initial_plan: AgentPlan | None = None
 event_broker = EventBroker()
 state_lock = RLock()
+scenario_runner = ScenarioRunner()
 
 
 class EmptyRequest(BaseModel):
@@ -270,3 +281,94 @@ def events(request: Request) -> StreamingResponse:
             "X-Accel-Buffering": "no",
         },
     )
+
+
+def _scenario_api_error(exc: Exception) -> ApiError:
+    if isinstance(exc, (KeyError, ScenarioRunNotFound)):
+        return ApiError(
+            status_code=404,
+            code="SCENARIO_NOT_FOUND",
+            message=str(exc).strip("'"),
+        )
+    if isinstance(exc, ScenarioRunConflict):
+        return ApiError(
+            status_code=409,
+            code="SCENARIO_RUN_CONFLICT",
+            message=str(exc),
+        )
+    return ApiError(
+        status_code=500,
+        code="SCENARIO_RUN_FAILED",
+        message="The scenario runner could not complete the request.",
+    )
+
+
+@app.get("/scenario-lab/scenarios")
+def scenario_catalog() -> dict[str, object]:
+    return correlated_payload(scenario_runner.catalog())
+
+
+@app.get("/scenario-lab/scenarios/{scenario_id}")
+def scenario_definition(scenario_id: str) -> dict[str, object]:
+    try:
+        definition = scenario_runner.definition(scenario_id)
+    except KeyError as exc:
+        raise _scenario_api_error(exc) from exc
+    return correlated_payload(definition)
+
+
+@app.post("/scenario-lab/runs", status_code=201)
+def scenario_start(request: ScenarioRunRequest) -> dict[str, object]:
+    try:
+        run = scenario_runner.start(request.scenario_id)
+    except (KeyError, ScenarioRunConflict) as exc:
+        raise _scenario_api_error(exc) from exc
+    return correlated_payload(run)
+
+
+@app.get("/scenario-lab/runs/{run_id}")
+def scenario_run(run_id: str) -> dict[str, object]:
+    try:
+        run = scenario_runner.get(run_id)
+    except ScenarioRunNotFound as exc:
+        raise _scenario_api_error(exc) from exc
+    return correlated_payload(run)
+
+
+@app.post("/scenario-lab/runs/{run_id}/advance")
+def scenario_advance(
+    run_id: str,
+    request: ScenarioAdvanceRequest | None = None,
+) -> dict[str, object]:
+    try:
+        run = scenario_runner.advance(
+            run_id,
+            expected_stage=request.expected_stage if request else None,
+        )
+    except (ScenarioRunNotFound, ScenarioRunConflict) as exc:
+        raise _scenario_api_error(exc) from exc
+    return correlated_payload(run)
+
+
+@app.post("/scenario-lab/scenarios/{scenario_id}/reset")
+def scenario_reset(scenario_id: str) -> dict[str, object]:
+    try:
+        scenario_runner.definition(scenario_id)
+        scenario_runner.reset(scenario_id)
+    except (KeyError, ScenarioRunConflict) as exc:
+        raise _scenario_api_error(exc) from exc
+    return correlated_payload({"reset": True, "scenario_id": scenario_id})
+
+
+@app.get("/scenario-lab/results")
+def scenario_results() -> dict[str, object]:
+    return correlated_payload({"runs": scenario_runner.latest_runs()})
+
+
+@app.post("/scenario-lab/run-all")
+def scenario_run_all(request: ScenarioRunAllRequest) -> dict[str, object]:
+    try:
+        report = scenario_runner.run_all(request.scenario_ids)
+    except (KeyError, ScenarioRunConflict) as exc:
+        raise _scenario_api_error(exc) from exc
+    return correlated_payload(report)

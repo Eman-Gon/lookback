@@ -45,7 +45,116 @@ The agent never mutates authority state or signs its own grants. The executor do
 
 ## Default runtime
 
-The default demo uses an in-memory graph so it works immediately. The graph interface is implemented separately so Neo4j can replace it without changing authority semantics.
+The default canonical demo uses an in-memory graph so it works immediately. The graph interface is
+implemented separately so Neo4j can replace it without changing authority semantics.
+
+Scenario Lab has a deliberately different persistence boundary: every run receives its own
+`MemoryGraphStore` and `IntentAuthority`, even when `DRAGBACK_GRAPH_BACKEND=neo4j` selects Neo4j for
+the canonical runtime. Lab runs therefore cannot reset, pollute, or contend over the configured
+Neo4j graph.
+
+## Scenario Lab
+
+```text
+React Scenario Lab
+        |
+        | catalog / start / advance / run-all
+        v
+Agent Service — ScenarioRunner
+        |
+        | HTTP, context_id + correlation ID
+        v
+Intent Authority — ScenarioAuthorityContextRegistry
+        |
+        | one MemoryGraphStore + signer per run context
+        |
+        +----------------------+
+        |                      |
+        | authorization        | grant verification
+        v                      ^
+Agent orchestration       Executor Service
+                               ^
+                               | HTTP execution request
+                               +----- Agent Service
+```
+
+The backend Pydantic catalog contains 12 deterministic definitions. Each definition carries
+presentation metadata, a typed graph seed, an initial `AgentRun`, an approved `DecisionMutation`, a
+fixture-driven corrected `AgentPlan`, an authority policy, and assertion-only expectations.
+Validation rejects duplicate IDs, missing edge endpoints, broken plan/ticket bindings,
+non-task expectations, discontinuous scoped provenance, unauthorized mutations, downstream ID
+mentions, mutation requirements that do not exactly match the affected scopes, and initial or
+corrected plans that do not satisfy their approved requirements.
+
+Every `graph-v17` seed has approved baseline Decision artifacts partitioned by role and scope. The
+primary baseline decision owns exactly the scopes the incoming decision changes; companion
+decisions remain authoritative for unaffected scopes. The initial plan is evaluated against the
+union, so baseline authorization does not depend on implicit or unauthoritative requirements.
+
+The agent creates a unique authority context and a real `AgentRun`, then advances through four
+public stages:
+
+1. `authorized` — the authority issues a baseline snapshot-bound grant;
+2. `decision-changed` — the authority applies the approved mutation and traverses the graph;
+3. `work-stopped` — the executor rejects the old grant and the original plan receives `REPLAN`;
+4. `reauthorized` — the fixture-driven corrected plan receives `ALLOW` and a replacement grant
+   executes.
+
+ScenarioRunner applies the same shared authorization-to-loop transition used by the canonical
+`AgentLoopController`. The retained loop state therefore moves through `ACT → REPLAN → COMPLETE`;
+the UI exposes that server-owned state and its history rather than inferring a loop transition.
+
+Stage changes are postcondition-bound: mutation must apply, the old execution must fail specifically
+with `STALE_SNAPSHOT`, the conflicting plan must receive `REPLAN`, and the replacement execution
+must succeed with `VALID`. A failed call leaves the run at the last truthful stage and persists an
+inspectable failed evaluation while the retained loop moves to `BLOCKED`. Advance requests may
+include the rendered `expected_stage`, making a retry after a lost response idempotent.
+
+Every consequential operation still crosses the service boundary over HTTP. The agent never signs
+a grant, and the executor forwards the signed token to the matching authority context rather than
+trusting an agent or browser verdict. Each context derives a distinct signing key, so a grant from
+one context is invalid in another.
+
+Signed tokens are held only inside the agent runner long enough to call the executor and are cleared
+when the run finishes. Public Scenario Lab responses include the verified grant payload metadata
+needed for evidence views, but never include the signed token. Completed runs retain token-free
+summaries—including expected and actual task IDs, false positives, missed invalidations, safety
+results, and runtime—in a replaceable, process-local repository, while their authority contexts are
+deleted. Detailed token-free runtimes are bounded to the five most recent completed runs per
+scenario.
+
+Run All serially executes the same four-stage runner for each selected definition. A failed scenario
+produces a failed summary without preventing later scenarios from running. Failures after start
+retain the real run ID and evidence for inspection; failures before a context exists are explicitly
+marked non-inspectable. Evaluation compares actual Task outcomes and verification results with
+structurally separate expectations; expectations never drive graph traversal, verdicts, or grants.
+
+Run All history is deliberately session-only and process-local. The result repository keeps the
+latest summary per scenario and at most five token-free detailed runs per scenario; completed
+authority contexts are removed. Restarting the agent service clears this history.
+
+Authority evaluation also resolves every action-level `task_id` back into the current graph. A plan
+that reintroduces a missing, non-Task, `NEEDS_REVIEW`, or `INVALIDATED` task receives `REPLAN` even
+when its requirement attributes otherwise match the latest decision.
+
+Authority traversal follows only allowed downstream relationship kinds, sorts candidates
+deterministically, and uses an explicit equal-depth tie-break for the primary provenance path.
+Mutation and outcome payloads separate preserved/invalidated Tasks from artifacts that merely need
+review.
+
+### Story and Evidence projections
+
+The React Scenario Lab uses one server-owned run model with two disclosure layers:
+
+- **Story** presents the outcome ledger, dominant stage message, shortest provenance path,
+  invalidated Tasks, original Plan review status, and proposed corrective actions.
+- **Evidence** presents the full graph, typed relationships, grant metadata, expanded timeline,
+  evaluation checks, and evidence references.
+
+The additive `outcome_summary` and run-summary fields drive both layers. The browser may format and
+filter those values, but it does not derive verdicts or safety outcomes. Corrective actions are
+truthfully typed as fixture-generated plan actions with no graph artifact ID; they are not
+persisted Task nodes.
 
 ## Data flow
 
@@ -74,6 +183,11 @@ The default demo uses an in-memory graph so it works immediately. The graph inte
 5. Authority issues a new `graph-v18` grant.
 6. Executor accepts it.
 
+The canonical `PLAN-028` and all Scenario Lab corrected plans are fixture-driven planner output.
+Their actions are presented as proposed plan actions, not graph Tasks. Their authorization is real:
+the authority evaluates their structured actions against current approved requirements, signs
+successful grants, and the executor independently verifies them.
+
 ### Coordinated demo reset
 
 The frontend calls one agent-owned reset endpoint. The agent first asks the authority to seed
@@ -91,6 +205,9 @@ Its downstream traversal reads only matching outgoing relationships with Cypher.
 in one write transaction, and the opt-in `neo4j` test suite compares the resulting graph and exact
 invalidation report with the in-memory backend. The suite must target a disposable database because
 reset deletes all data in the configured Neo4j database.
+
+This setting affects the canonical authority runtime only. Scenario Lab contexts remain isolated
+in memory and never call `Neo4jGraphStore.reset()`.
 
 ### Anthropic
 
